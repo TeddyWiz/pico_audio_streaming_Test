@@ -1021,7 +1021,7 @@ int tlsio_mbedtls_setoption(CONCRETE_IO_HANDLE tls_io, const char *optionName, c
                 free(temp_key);
                 result = MU_FAILURE;
             }
-            else if (tls_io_instance->owncert.private_version > 0 && mbedtls_ssl_conf_own_cert(&tls_io_instance->config, &tls_io_instance->owncert, &tls_io_instance->pKey))
+            else if (tls_io_instance->owncert.version > 0 && mbedtls_ssl_conf_own_cert(&tls_io_instance->config, &tls_io_instance->owncert, &tls_io_instance->pKey))
             {
                 LogError("failure calling mbedtls_ssl_conf_own_cert");
                 free(temp_key);

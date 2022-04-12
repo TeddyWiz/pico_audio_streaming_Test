@@ -22,6 +22,7 @@ target_link_libraries(${TARGET_NAME} PRIVATE
         ETHERNET_FILES
         SPI_FILES
         DHCP_FILES
+        LOOPBACK_FILES
         DNS_FILES
         TIMER_FILES
         AZURE_SDK_PORT_FILES
