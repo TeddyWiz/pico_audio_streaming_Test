@@ -61,3 +61,19 @@ target_link_libraries(AZURE_SDK_PORT_FILES PUBLIC
         SNTP_FILES
         AZURE_SDK_FILES
         )
+# rtp
+add_library(RTP_FILES STATIC)
+
+target_sources(RTP_FILES PUBLIC
+        ${PORT_DIR}/rtp/rtp.c
+        )
+
+target_include_directories(RTP_FILES PUBLIC
+        ${PORT_DIR}/rtp
+        )
+
+target_link_libraries(RTP_FILES PRIVATE
+        pico_stdlib      
+        ETHERNET_FILES
+        )
+

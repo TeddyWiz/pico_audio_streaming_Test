@@ -19,11 +19,13 @@ target_include_directories(${TARGET_NAME} PUBLIC
 target_link_libraries(${TARGET_NAME} PRIVATE
         pico_stdlib
         hardware_spi
+        hardware_adc
         ETHERNET_FILES
         SPI_FILES
         DHCP_FILES
         LOOPBACK_FILES
         DNS_FILES
+        RTP_FILES
         TIMER_FILES
         AZURE_SDK_PORT_FILES
         mbedcrypto

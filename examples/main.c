@@ -28,6 +28,11 @@
 
 #include "azure_samples.h"
 
+#include "hardware/gpio.h"
+#include "hardware/adc.h"
+#include "hardware/uart.h"
+#include "pico/binary_info.h"
+
 /**
   * ----------------------------------------------------------------------------------------------------
   * Macros
@@ -43,6 +48,17 @@
 #define TCP_S_DEBUG_
 #define TCP_S_SOCKET 0
 #define TCP_S_PORT 20000
+#define UDP_SOCKET 1
+#define UDP_PORT 30000
+#define UDP_SPORT 30001
+
+//adc define
+#define ADC_NUM 0
+#define ADC_PIN (26 + ADC_NUM)
+#define ADC_VREF 3.3
+#define ADC_RANGE (1 << 12)
+#define ADC_CONVERT (ADC_VREF / (ADC_RANGE - 1))
+
 /**
   * ----------------------------------------------------------------------------------------------------
   * Variables
@@ -87,6 +103,7 @@ uint16_t TCP_Server(uint8_t sn, uint16_t port);
 //TCP_S_RSV_DATA *TCP_S_Recv(uint8_t sn);
 //uint8_t *TCP_S_Recv(uint8_t sn);
 uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size);
+int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port);
 
 
 
@@ -102,12 +119,17 @@ int main()
 //-----------------------------------------------------------------------------------
     int8_t networkip_setting = 0;
 
-    int8_t tcp_buff[2048];
+    int8_t UDP_buff[2048];
     uint16_t TCP_S_status = 0;
+    uint32_t UDP_S_status = 0;
     //TCP_S_RSV_DATA *TCP_Server_Buf = 0;
     uint8_t *tcp_rcv_data = 0;
-    uint16_t tcp_rcv_size = 0;
+    uint32_t tcp_rcv_size = 0;
+    uint8_t UDP_BroadIP[4] = {255,255,255,255};
+    int32_t UDP_ret = 0;
 
+    uint16_t adc_raw = 0;
+    
     stdio_init_all();
 
     wizchip_delay_ms(1000 * 3); // wait for 3 seconds
@@ -121,6 +143,28 @@ int main()
 
     wizchip_1ms_timer_initialize(repeating_timer_callback);
 
+    //adc init
+    bi_decl(bi_program_description("Analog microphone example for Raspberry Pi Pico")); // for picotool
+    bi_decl(bi_1pin_with_name(ADC_PIN, "ADC input pin"));
+
+    adc_init();
+    adc_gpio_init( ADC_PIN);
+    adc_select_input( ADC_NUM);
+    //sleep_ms(1000);
+    printf("Starting Program\n");
+    //adc fifo 
+    
+    adc_fifo_setup(
+        true,    // Write each completed conversion to the sample FIFO
+        true,    // Enable DMA data request (DREQ)
+        1,       // DREQ (and IRQ) asserted when at least 1 sample present
+        true,   // We won't see the ERR bit because of 8 bit reads; disable.
+        false     // Shift each sample to 8 bits when pushing to FIFO
+    );
+    adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
+    sleep_ms(1000);
+    printf("Starting capture\n");
+    adc_run(true);
 #ifdef _DHCP
     // this example uses DHCP
     networkip_setting = wizchip_network_initialize(true, &g_net_info);
@@ -159,6 +203,7 @@ int main()
     else
         printf(" Check your network setting.\n");
 
+    //adc test
     /* Infinite loop */
     for (;;)
     {
@@ -174,6 +219,13 @@ int main()
         //wizchip_delay_ms(1000); // wait for 1 second
         //loopback_tcps(TCP_S_SOCKET, tcp_buff, TCP_S_PORT);
         #if 1
+        //adc
+        //adc_raw = adc_read(); // raw voltage from ADC
+        //adc fifo
+        adc_raw = adc_fifo_get_blocking();
+        printf("%.2f\n", adc_raw * ADC_CONVERT);
+        
+        UDP_S_status = udps_status(UDP_SOCKET, UDP_buff, UDP_PORT);
         TCP_S_status = TCP_Server(TCP_S_SOCKET, TCP_S_PORT);
         if(TCP_S_status == 17)
         {
@@ -184,6 +236,14 @@ int main()
             if(tcp_rcv_data != 0)
             {
                 printf("rcv[%d] : %s \r\n",tcp_rcv_size, tcp_rcv_data);
+                if(UDP_S_status == 0x22)
+                {
+                    UDP_ret = sendto(UDP_SOCKET, tcp_rcv_data, tcp_rcv_size, UDP_BroadIP, UDP_SPORT);
+                    if(UDP_ret < 0)
+                    {
+                        printf("sendto Error \r\n");
+                    }
+                }
                 free(tcp_rcv_data);
             }
             #if 0
@@ -359,6 +419,7 @@ int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port)
                sentsize += ret; // Don't care SOCKERR_BUSY, because it is zero.
             }
          }
+         return SOCK_UDP;
          break;
       case SOCK_CLOSED:
 #ifdef _LOOPBACK_DEBUG_
