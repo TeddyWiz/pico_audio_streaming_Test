@@ -33,6 +33,9 @@
 #include "hardware/uart.h"
 #include "pico/binary_info.h"
 
+#include "pico/multicore.h"
+
+
 /**
   * ----------------------------------------------------------------------------------------------------
   * Macros
@@ -51,6 +54,8 @@
 #define UDP_SOCKET 1
 #define UDP_PORT 30000
 #define UDP_SPORT 30001
+#define TCP_C_SOCKET 2
+
 
 //adc define
 #define ADC_NUM 0
@@ -88,8 +93,22 @@ typedef struct TCP_S_RSV_DATA_1
 	uint16_t RCV_Size;
 	uint8_t *RCV_DATA;
 }TCP_S_RSV_DATA;
+
+typedef struct ADC_DATA_STATUS_t
+{
+    uint8_t sendPosition;
+    uint8_t sendFlag;
+    uint8_t sendComplete;
+    uint8_t inputPosition;
+    uint16_t dataCount;
+    uint8_t sendStatus;
+    uint8_t DATA[2][2048];
+}ADC_DATA_STATUS;
+
 /* Timer */
 static uint16_t g_msec_cnt = 0;
+
+ADC_DATA_STATUS adc_data;
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -100,11 +119,58 @@ static uint16_t g_msec_cnt = 0;
 static void repeating_timer_callback(void);
 
 uint16_t TCP_Server(uint8_t sn, uint16_t port);
+uint16_t TCP_client(uint8_t sn, uint8_t* destip, uint16_t destport);
+
 //TCP_S_RSV_DATA *TCP_S_Recv(uint8_t sn);
 //uint8_t *TCP_S_Recv(uint8_t sn);
 uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size);
 int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port);
 
+
+void core1_entry() {
+    uint16_t adc_raw = 0;
+    
+    adc_init();
+    adc_gpio_init( ADC_PIN);
+    adc_select_input( ADC_NUM);
+    //sleep_ms(1000);
+    
+    //adc fifo 
+    
+    adc_fifo_setup(
+        true,    // Write each completed conversion to the sample FIFO
+        true,    // Enable DMA data request (DREQ)
+        1,       // DREQ (and IRQ) asserted when at least 1 sample present
+        true,   // We won't see the ERR bit because of 8 bit reads; disable.
+        false     // Shift each sample to 8 bits when pushing to FIFO
+    );
+    adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
+    
+    printf("Starting capture\n");
+    adc_run(true);
+    while(1)
+    {
+        if(adc_data.sendStatus == 0)
+        {
+            if(adc_data.dataCount >= 2048)
+            {
+                if(adc_data.sendComplete == 1)
+                {
+                    adc_data.inputPosition =  adc_data.inputPosition == 0 ? 1 : 0;
+                    adc_data.dataCount = 0;
+                }
+                //else
+                //    continue;
+                
+            }
+            adc_raw = adc_fifo_get_blocking();
+            adc_data.DATA[adc_data.inputPosition][adc_data.dataCount++] = (adc_raw >> 8) & 0x00ff;
+            adc_data.DATA[adc_data.inputPosition][adc_data.dataCount++] = adc_raw & 0x00ff;
+            printf("%d r:%04x \r\n", adc_data.dataCount, adc_raw);
+            
+        }
+    }
+}
 
 
 /**
@@ -119,17 +185,32 @@ int main()
 //-----------------------------------------------------------------------------------
     int8_t networkip_setting = 0;
 
-    int8_t UDP_buff[2048];
+    int8_t UDP_buff[1048];
     uint16_t TCP_S_status = 0;
-    uint32_t UDP_S_status = 0;
+    uint16_t UDP_S_status = 0;
     //TCP_S_RSV_DATA *TCP_Server_Buf = 0;
     uint8_t *tcp_rcv_data = 0;
-    uint32_t tcp_rcv_size = 0;
+    uint16_t tcp_rcv_size = 0;
     uint8_t UDP_BroadIP[4] = {255,255,255,255};
     int32_t UDP_ret = 0;
+    uint8_t TCP_Client_DestIp[4] = {192, 168, 0, 3};
+    uint16_t TCP_Client_Port = 22000;
+    uint16_t TCP_C_status = 0;
+    uint8_t *tcp_c_rcv_data = 0;
+    uint16_t tcp_c_rcv_size = 0;
+    int tcp_c_ret = 0;
 
-    uint16_t adc_raw = 0;
+    int8_t mic_Data[2048];
     
+    uint32_t mic_cnt = 0;
+    uint8_t data_send_status = 0;
+    uint16_t send_count = 0;
+    
+    uint16_t adc_raw = 0;
+    int i= 0;
+
+    memset(&adc_data, 0, sizeof(ADC_DATA_STATUS));
+    adc_data.sendComplete = 1;
     stdio_init_all();
 
     wizchip_delay_ms(1000 * 3); // wait for 3 seconds
@@ -146,7 +227,9 @@ int main()
     //adc init
     bi_decl(bi_program_description("Analog microphone example for Raspberry Pi Pico")); // for picotool
     bi_decl(bi_1pin_with_name(ADC_PIN, "ADC input pin"));
-
+    sleep_ms(1000);
+    printf("Starting Program\n");
+#if 1
     adc_init();
     adc_gpio_init( ADC_PIN);
     adc_select_input( ADC_NUM);
@@ -161,10 +244,12 @@ int main()
         true,   // We won't see the ERR bit because of 8 bit reads; disable.
         false     // Shift each sample to 8 bits when pushing to FIFO
     );
-    adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
+    adc_set_clkdiv(239);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s
     sleep_ms(1000);
     printf("Starting capture\n");
     adc_run(true);
+    #endif
+    //multicore_launch_core1(core1_entry);
 #ifdef _DHCP
     // this example uses DHCP
     networkip_setting = wizchip_network_initialize(true, &g_net_info);
@@ -222,11 +307,81 @@ int main()
         //adc
         //adc_raw = adc_read(); // raw voltage from ADC
         //adc fifo
-        adc_raw = adc_fifo_get_blocking();
-        printf("%.2f\n", adc_raw * ADC_CONVERT);
-        
+        //adc_raw = adc_fifo_get_blocking();
+        #if 1
+        if(data_send_status == 1)
+        {
+            #if 1
+            for(i= 0; i<736; i++)
+            {
+                adc_raw = adc_fifo_get_blocking();
+                adc_raw = adc_raw - (1<<15);
+                mic_Data[mic_cnt++] = (adc_raw >> 8) & 0x00ff;
+                mic_Data[mic_cnt++] = adc_raw & 0x00ff;
+            }
+            sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
+            mic_cnt = 0;
+            send_count++;
+            #elif
+            adc_raw = adc_fifo_get_blocking();
+            adc_raw = adc_raw - (1<<15);
+            mic_Data[mic_cnt++] = (adc_raw >> 8) & 0x00ff;
+            mic_Data[mic_cnt++] = adc_raw & 0x00ff;
+            //printf("%04x", mic_cnt, adc_raw, mic_Data[mic_cnt -2], mic_Data[mic_cnt -1]);
+            if(mic_cnt > 1470)
+            {
+                sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
+                //printf("%02x%02x %02x%02x %02x%02x\r\n", mic_Data[0]& 0x00ff, mic_Data[1]& 0x00ff ,mic_Data[2]& 0x00ff, mic_Data[3]& 0x00ff,mic_Data[4]& 0x00ff, mic_Data[5]& 0x00ff);
+                mic_cnt = 0;
+                send_count++;
+            }
+            #endif
+        }
+        if(send_count >= 1360)
+        {
+            UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
+            data_send_status = 0;
+            send_count = 0;
+            adc_run(false);
+        }
+        #endif
+        //printf("%.2f\n", adc_raw * ADC_CONVERT);
+
+        //TCP_C_status =TCP_client(TCP_C_SOCKET, TCP_Client_DestIp, TCP_Client_Port);
         UDP_S_status = udps_status(UDP_SOCKET, UDP_buff, UDP_PORT);
         TCP_S_status = TCP_Server(TCP_S_SOCKET, TCP_S_PORT);
+        #if 0
+        if(TCP_C_status == 17)
+        {
+            tcp_c_rcv_data = TCP_S_Recv(TCP_C_SOCKET, &tcp_c_rcv_size);
+            if(tcp_c_rcv_data != 0)
+            {
+                printf("rcv[%d] : %s \r\n",tcp_c_rcv_size, tcp_c_rcv_data);
+                tcp_c_ret = send(TCP_C_SOCKET, tcp_c_rcv_data, tcp_c_rcv_size); // Data send process (User's buffer -> Destination through H/W Tx socket buffer)
+				if(tcp_c_ret < 0) // Send Error occurred (sent data length < 0)
+				{
+					close(TCP_C_SOCKET); // socket close
+					printf("TCP Client Sedn message Error !! \r\n");
+				}
+                
+                if(strncmp(tcp_c_rcv_data, "ready", 5) == 0)
+                {
+                    printf("client data recv ready\r\n");
+                    data_send_status = 1;
+                }
+                if(data_send_status ==1)
+                {
+                    if(mic_cnt > 191999)
+                    {
+                        data_send_status = 0;
+                        tcp_c_ret = send(TCP_C_SOCKET, mic_Data, mic_cnt);
+                        printf("client data send complite %d\r\n", tcp_c_ret);
+                    }
+                }
+                free(tcp_c_rcv_data);
+            }
+        }
+        #endif
         if(TCP_S_status == 17)
         {
         
@@ -238,11 +393,27 @@ int main()
                 printf("rcv[%d] : %s \r\n",tcp_rcv_size, tcp_rcv_data);
                 if(UDP_S_status == 0x22)
                 {
-                    UDP_ret = sendto(UDP_SOCKET, tcp_rcv_data, tcp_rcv_size, UDP_BroadIP, UDP_SPORT);
+                    //UDP_ret = sendto(UDP_SOCKET, tcp_rcv_data, tcp_rcv_size, UDP_BroadIP, UDP_SPORT);
                     if(UDP_ret < 0)
                     {
                         printf("sendto Error \r\n");
                     }
+                }
+                if(strncmp(tcp_rcv_data, "start", 5) == 0)
+                {
+                    printf(" data  send start\r\n");
+                    //UDP_ret = sendto(UDP_SOCKET, "START", 5, UDP_BroadIP, UDP_SPORT);
+                    adc_run(true);
+                    adc_fifo_drain();
+                    data_send_status = 1;
+                    //adc_data.sendStatus = 1;
+                }
+                else if(strncmp(tcp_rcv_data, "stop", 4) == 0)
+                {
+                    printf("data send stop \r\n");
+                    data_send_status = 0;
+                    //adc_data.sendStatus = 0;
+                    adc_run(false);
                 }
                 free(tcp_rcv_data);
             }
@@ -381,6 +552,99 @@ uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size)
     }
    *rcv_size = size;
    return buff;
+}
+
+
+uint16_t TCP_client(uint8_t sn, uint8_t* destip, uint16_t destport)
+{
+   int32_t ret; // return value for SOCK_ERRORs
+   uint16_t size = 0, sentsize=0;
+
+   // Destination (TCP Server) IP info (will be connected)
+   // >> loopback_tcpc() function parameter
+   // >> Ex)
+   //	uint8_t destip[4] = 	{192, 168, 0, 214};
+   //	uint16_t destport = 	5000;
+
+   // Port number for TCP client (will be increased)
+   static uint16_t any_port = 	50000;
+
+   // Socket Status Transitions
+   // Check the W5500 Socket n status register (Sn_SR, The 'Sn_SR' controlled by Sn_CR command or Packet send/recv status)
+   switch(getSn_SR(sn))
+   {
+      case SOCK_ESTABLISHED :
+#if 0
+
+         if(getSn_IR(sn) & Sn_IR_CON)	// Socket n interrupt register mask; TCP CON interrupt = connection with peer is successful
+         {
+#ifdef _LOOPBACK_DEBUG_
+			printf("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
+#endif
+			setSn_IR(sn, Sn_IR_CON);  // this interrupt should be write the bit cleared to '1'
+         }
+
+         //////////////////////////////////////////////////////////////////////////////////////////////
+         // Data Transaction Parts; Handle the [data receive and send] process
+         //////////////////////////////////////////////////////////////////////////////////////////////
+		 if((size = getSn_RX_RSR(sn)) > 0) // Sn_RX_RSR: Socket n Received Size Register, Receiving data length
+         {
+			if(size > DATA_BUF_SIZE) size = DATA_BUF_SIZE; // DATA_BUF_SIZE means user defined buffer size (array)
+			ret = recv(sn, buf, size); // Data Receive process (H/W Rx socket buffer -> User's buffer)
+
+			if(ret <= 0) return ret; // If the received data length <= 0, receive failed and process end
+			size = (uint16_t) ret;
+			sentsize = 0;
+
+			// Data sentsize control
+			while(size != sentsize)
+			{
+				ret = send(sn, buf+sentsize, size-sentsize); // Data send process (User's buffer -> Destination through H/W Tx socket buffer)
+				if(ret < 0) // Send Error occurred (sent data length < 0)
+				{
+					close(sn); // socket close
+					return ret;
+				}
+				sentsize += ret; // Don't care SOCKERR_BUSY, because it is zero.
+			}
+         }
+#endif
+         return 17;
+		 //////////////////////////////////////////////////////////////////////////////////////////////
+         break;
+
+      case SOCK_CLOSE_WAIT :
+#ifdef _LOOPBACK_DEBUG_
+         //printf("%d:CloseWait\r\n",sn);
+#endif
+         if((ret=disconnect(sn)) != SOCK_OK) return ret;
+#ifdef _LOOPBACK_DEBUG_
+         printf("%d:Socket Closed\r\n", sn);
+#endif
+         break;
+
+      case SOCK_INIT :
+#ifdef _LOOPBACK_DEBUG_
+    	 printf("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
+#endif
+    	 if( (ret = connect(sn, destip, destport)) != SOCK_OK) return ret;	//	Try to TCP connect to the TCP server (destination)
+         break;
+
+      case SOCK_CLOSED:
+    	  close(sn);
+    	  if((ret=socket(sn, Sn_MR_TCP, any_port++, 0x00)) != sn){
+         if(any_port == 0xffff) any_port = 50000;
+         return ret; // TCP socket open with 'any_port' port number
+        } 
+#ifdef _LOOPBACK_DEBUG_
+    	 //printf("%d:TCP client loopback start\r\n",sn);
+         //printf("%d:Socket opened\r\n",sn);
+#endif
+         break;
+      default:
+         break;
+   }
+   return 1;
 }
 
 int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port)
