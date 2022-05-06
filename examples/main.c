@@ -105,6 +105,12 @@ typedef struct ADC_DATA_STATUS_t
     uint8_t DATA[2][2048];
 }ADC_DATA_STATUS;
 
+typedef union h2f_var_t
+{
+    uint32_t hdata;
+    float fdata;
+}h2f_var;
+
 /* Timer */
 static uint16_t g_msec_cnt = 0;
 
@@ -144,7 +150,7 @@ void core1_entry() {
         true,   // We won't see the ERR bit because of 8 bit reads; disable.
         false     // Shift each sample to 8 bits when pushing to FIFO
     );
-    adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
+    //adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
     
     printf("Starting capture\n");
     adc_run(true);
@@ -200,14 +206,16 @@ int main()
     uint16_t tcp_c_rcv_size = 0;
     int tcp_c_ret = 0;
 
-    int8_t mic_Data[2048];
+    //int8_t mic_Data[2048];
+    int8_t mic_Data[200000];
     
     uint32_t mic_cnt = 0;
     uint8_t data_send_status = 0;
     uint16_t send_count = 0;
     
     uint16_t adc_raw = 0;
-    int i= 0;
+    uint16_t adc_raw1 = 0;
+    uint32_t i= 0;
 
     memset(&adc_data, 0, sizeof(ADC_DATA_STATUS));
     adc_data.sendComplete = 1;
@@ -311,39 +319,66 @@ int main()
         #if 1
         if(data_send_status == 1)
         {
-            #if 1
+            #if 0
             for(i= 0; i<736; i++)
             {
                 adc_raw = adc_fifo_get_blocking();
-                adc_raw = adc_raw - (1<<15);
-                mic_Data[mic_cnt++] = (adc_raw >> 8) & 0x00ff;
-                mic_Data[mic_cnt++] = adc_raw & 0x00ff;
+                //adc_raw = adc_read();
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10); 
+                mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
+                mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
+                #if 0
+                adc_raw11.fdata = adc_raw * ADC_CONVERT;
+                mic_Data[mic_cnt++] = (adc_raw11.hdata >> 8) & 0x00ff;
+                mic_Data[mic_cnt++] = adc_raw11.hdata & 0x00ff;
+                #endif
             }
             sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
+            //printf("send %d\r\n", mic_cnt);
+            //printf("0x%04x | 0x%08x %.2f 0x%08x %.2f | %02x %02x | %02x %02x | %02x %02x| \r\n",adc_raw ,adc_raw*ADC_CONVERT, adc_raw*ADC_CONVERT, adc_raw11.hdata, adc_raw11.fdata, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
+            //printf("0x%04x  0x%04x | %02x %02x | %02x %02x | %02x %02x| \r\n", adc_raw, adc_raw1, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
             mic_cnt = 0;
             send_count++;
-            #elif
-            adc_raw = adc_fifo_get_blocking();
-            adc_raw = adc_raw - (1<<15);
-            mic_Data[mic_cnt++] = (adc_raw >> 8) & 0x00ff;
-            mic_Data[mic_cnt++] = adc_raw & 0x00ff;
-            //printf("%04x", mic_cnt, adc_raw, mic_Data[mic_cnt -2], mic_Data[mic_cnt -1]);
-            if(mic_cnt > 1470)
+            #else
+            for(i= 0; i<100000; i++)
             {
-                sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
-                //printf("%02x%02x %02x%02x %02x%02x\r\n", mic_Data[0]& 0x00ff, mic_Data[1]& 0x00ff ,mic_Data[2]& 0x00ff, mic_Data[3]& 0x00ff,mic_Data[4]& 0x00ff, mic_Data[5]& 0x00ff);
-                mic_cnt = 0;
-                send_count++;
+                adc_raw = adc_fifo_get_blocking();
+                //adc_raw = adc_read();
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10); 
+                mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
+                mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
+                #if 0
+                adc_raw11.fdata = adc_raw * ADC_CONVERT;
+                mic_Data[mic_cnt++] = (adc_raw11.hdata >> 8) & 0x00ff;
+                mic_Data[mic_cnt++] = adc_raw11.hdata & 0x00ff;
+                #endif
             }
+            //sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
+            //printf("send %d\r\n", mic_cnt);
+            //printf("0x%04x | 0x%08x %.2f 0x%08x %.2f | %02x %02x | %02x %02x | %02x %02x| \r\n",adc_raw ,adc_raw*ADC_CONVERT, adc_raw*ADC_CONVERT, adc_raw11.hdata, adc_raw11.fdata, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
+            //printf("0x%04x  0x%04x | %02x %02x | %02x %02x | %02x %02x| \r\n", adc_raw, adc_raw1, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
+            mic_cnt = 0;
+            send_count++;
+            for(i=0; i<135; i++)
+            {
+                //printf("cnt = %d , %d\r\n",i, i*1472);
+                sendto(UDP_SOCKET, mic_Data+(i * 1472), 1472, UDP_BroadIP, UDP_SPORT);
+            }
+            //printf("send = %d \r\n",send_count);
             #endif
+            
+            
         }
-        if(send_count >= 1360)
+        
+        if(send_count >= 100)  
         {
             UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
+            printf("send finish\r\n");
             data_send_status = 0;
             send_count = 0;
             adc_run(false);
         }
+        
         #endif
         //printf("%.2f\n", adc_raw * ADC_CONVERT);
 
