@@ -211,7 +211,7 @@ int main()
     
     uint32_t mic_cnt = 0;
     uint8_t data_send_status = 0;
-    uint16_t send_count = 0;
+    uint32_t send_count = 0;
     
     uint16_t adc_raw = 0;
     uint16_t adc_raw1 = 0;
@@ -252,7 +252,7 @@ int main()
         true,   // We won't see the ERR bit because of 8 bit reads; disable.
         false     // Shift each sample to 8 bits when pushing to FIFO
     );
-    adc_set_clkdiv(239);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s
+    adc_set_clkdiv(1087);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s
     sleep_ms(1000);
     printf("Starting capture\n");
     adc_run(true);
@@ -340,11 +340,22 @@ int main()
             mic_cnt = 0;
             send_count++;
             #else
-            for(i= 0; i<100000; i++)
+            /*
+            adc_raw = adc_fifo_get_blocking();
+            //adc_raw = adc_read();
+            adc_raw1 = (adc_raw&0x0fff) - (1<<10);
+            mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
+            mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
+            sendto(UDP_SOCKET, mic_Data, 2, UDP_BroadIP, UDP_SPORT);
+            send_count++;
+            mic_cnt = 0;
+            */
+            
+            for(i= 0; i<250; i++)
             {
                 adc_raw = adc_fifo_get_blocking();
                 //adc_raw = adc_read();
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10); 
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
                 mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
                 mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
                 #if 0
@@ -359,21 +370,23 @@ int main()
             //printf("0x%04x  0x%04x | %02x %02x | %02x %02x | %02x %02x| \r\n", adc_raw, adc_raw1, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
             mic_cnt = 0;
             send_count++;
-            for(i=0; i<135; i++)
+            sendto(UDP_SOCKET, mic_Data, 500, UDP_BroadIP, UDP_SPORT);
+            /*
+            for(i=0; i<1; i++)
             {
                 //printf("cnt = %d , %d\r\n",i, i*1472);
                 sendto(UDP_SOCKET, mic_Data+(i * 1472), 1472, UDP_BroadIP, UDP_SPORT);
-            }
+            }*/
             //printf("send = %d \r\n",send_count);
             #endif
             
             
         }
         
-        if(send_count >= 100)  
+        if(send_count >= 2000)  
         {
             UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
-            printf("send finish\r\n");
+            printf("send finish %d\r\n", send_count);
             data_send_status = 0;
             send_count = 0;
             adc_run(false);
