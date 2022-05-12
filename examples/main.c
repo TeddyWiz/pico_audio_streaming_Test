@@ -252,7 +252,7 @@ int main()
         true,   // We won't see the ERR bit because of 8 bit reads; disable.
         false     // Shift each sample to 8 bits when pushing to FIFO
     );
-    adc_set_clkdiv(1087);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s
+    adc_set_clkdiv(1087);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s 1087=44118S/s
     sleep_ms(1000);
     printf("Starting capture\n");
     adc_run(true);
@@ -432,7 +432,6 @@ int main()
         #endif
         if(TCP_S_status == 17)
         {
-        
             //TCP_Server_Buf = TCP_S_Recv(TCP_S_SOCKET);
             //tcp_rcv_data = TCP_S_Recv(TCP_S_SOCKET);
             tcp_rcv_data = TCP_S_Recv(TCP_S_SOCKET, &tcp_rcv_size);
