@@ -35,6 +35,8 @@
 
 #include "pico/multicore.h"
 
+#include "rtp.h"
+
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -53,7 +55,7 @@
 #define TCP_S_PORT 20000
 #define UDP_SOCKET 1
 #define UDP_PORT 30000
-#define UDP_SPORT 30001
+#define UDP_SPORT 40392
 #define TCP_C_SOCKET 2
 
 
@@ -132,6 +134,10 @@ uint16_t TCP_client(uint8_t sn, uint8_t* destip, uint16_t destport);
 uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size);
 int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port);
 
+//rtp function
+static StatusCode RtpGetRandomCb(uint32_t *random);
+void TxRtpSetup();
+
 
 void core1_entry() {
     uint16_t adc_raw = 0;
@@ -198,6 +204,7 @@ int main()
     uint8_t *tcp_rcv_data = 0;
     uint16_t tcp_rcv_size = 0;
     uint8_t UDP_BroadIP[4] = {255,255,255,255};
+    uint8_t UDP_TestIP[4] = {192,168,0,3};
     int32_t UDP_ret = 0;
     uint8_t TCP_Client_DestIp[4] = {192, 168, 0, 3};
     uint16_t TCP_Client_Port = 22000;
@@ -216,7 +223,54 @@ int main()
     uint16_t adc_raw = 0;
     uint16_t adc_raw1 = 0;
     uint32_t i= 0;
+    uint16_t random_data = 0;
+    //rtp data
+    int8_t *rtp_data = 0;
+    int8_t *rtp_data_current = 0;
 
+    uint8_t sample_packet[160] =  \
+    {0x6e, 0x68, 0x15, 0x14, 0x6a, 0x14, 0x14, 0x15, 0x69, 0x60,\
+     0x6e, 0x6a, 0x6c, 0x6e, 0x64, 0x6c, 0x6a, 0x16, 0x17, 0x6c, 0x6e, 0x6d, 0x60, 0x66, 0x7e, 0x7f,\
+     0x45, 0xc6, 0xc9, 0xf0, 0xfc, 0xe7, 0xf3, 0xfa, 0xe5, 0xf0, 0xcb, 0xf1, 0xf6, 0xcf, 0xcd, 0xe4,\
+     0xfa, 0xc2, 0x53, 0x74, 0x5f, 0x42, 0x5b, 0xf6, 0xf0, 0xf2, 0xfc, 0xe0, 0xee, 0x97, 0xe8, 0xf2,\
+     0x57, 0x5a, 0x4f, 0x4d, 0x75, 0x67, 0x7f, 0x7d, 0x66, 0x65, 0x74, 0x75, 0x43, 0x78, 0x4b, 0x47,\
+     0x55, 0x43, 0x67, 0x66, 0x6d, 0x63, 0x6c, 0x64, 0x66, 0x64, 0x78, 0x64, 0x6f, 0x6f, 0x14, 0x14,\
+     0x6c, 0x17, 0x11, 0x13, 0x10, 0x17, 0x10, 0x1c, 0x1f, 0x1d, 0x10, 0x10, 0x16, 0x10, 0x10, 0x1f,\
+     0x1c, 0x1f, 0x19, 0x1e, 0x18, 0x10, 0x17, 0x12, 0x14, 0x6c, 0x62, 0x6d, 0x63, 0x6a, 0x15, 0x15,\
+     0x17, 0x6e, 0x65, 0x77, 0x72, 0x40, 0xd0, 0xf7, 0x73, 0x7d, 0x7e, 0x62, 0x67, 0x62, 0x6a, 0x15,\
+     0x6a, 0x17, 0x15, 0x65, 0x43, 0x71, 0x5a, 0x59, 0x7e, 0x60, 0x66, 0x7a, 0x72, 0x72, 0x49, 0x65,\
+     0x7a, 0x60, 0x78, 0x5d, 0x44, 0x42};
+
+     uint8_t Temp_invite[1049] = \
+        "INVITE sip:3796CB71@sip.cybercity.dk SIP/2.0\n"\
+        "Via: SIP/2.0/UDP 192.168.0.125;branch=z9hG4bKnp10144774-4725f980192.168.0.125;rport\n"\
+        "From: \"arik\" <sip:35104723@sip.cybercity.dk>;tag=b56e6e\n"\
+        "To: <sip:3796CB71@sip.cybercity.dk>\n"\
+        "Call-ID: 11894297-4432a9f8@192.168.0.125\n"\
+        "CSeq: 2 INVITE\n"\
+        "Proxy-Authorization: Digest username=\"voi18062\",realm=\"sip.cybercity.dk\",uri=\"sip:192.168.0.125\",nonce=\"1701ba6557c1e1b4223e887e293cfa8\",opaque=\"1701a1351f70795\",nc=\"00000001\",response=\"83e1608f6d9ad38597ac6bbe4d3aafae\"\n"\
+        "Content-Type: application/sdp\n"\
+        "Content-Length: 270\n"\
+        "Date: Mon, 04 Jul 2005 09:56:06 GMT\n"\
+        "Contact: <sip:35104723@192.168.0.125>\n"\
+        "Expires: 120\n"\
+        "Accept: application/sdp\n"\
+        "Max-Forwards: 70\n"\
+        "User-Agent: Nero SIPPS IP Phone Version 2.0.51.16\n"\
+        "Allow: INVITE, ACK, CANCEL, BYE, REFER, OPTIONS, NOTIFY, INFO\n\n"\
+        "v=0\n"\
+        "o=SIPPS 11888330 11888327 IN IP4 192.168.0.125\n"\
+        "s=SIP call\n"\
+        "c=IN IP4 192.168.0.125\n"\
+        "t=0 0\n"\
+        "m=audio 30000 RTP/AVP 0 8 97 2 3\n"\
+        "a=rtpmap:0 L16/41100\n"\
+        "a=rtpmap:8 pcma/8000\n"\
+        "a=rtpmap:97 iLBC/8000\n"\
+        "a=rtpmap:2 G726-32/8000\n"\
+        "a=rtpmap:3 GSM/8000\n"\
+        "a=fmtp:97 mode=20\n"\
+        "a=sendrecv\n";
     memset(&adc_data, 0, sizeof(ADC_DATA_STATUS));
     adc_data.sendComplete = 1;
     stdio_init_all();
@@ -232,17 +286,23 @@ int main()
 
     wizchip_1ms_timer_initialize(repeating_timer_callback);
 
+    random_data = rand() >> 16;
     //adc init
     bi_decl(bi_program_description("Analog microphone example for Raspberry Pi Pico")); // for picotool
     bi_decl(bi_1pin_with_name(ADC_PIN, "ADC input pin"));
     sleep_ms(1000);
     printf("Starting Program\n");
+    printf("random1 = %x\r\n ", random_data);
+    random_data = rand() >> 16;
+    printf("random2 = %x\r\n ", random_data);
+    //random_data = (rand() >> 16) >> 16;
+    printf("random3 = %08X\r\n ", (uint32_t)((rand())));
 #if 1
     adc_init();
     adc_gpio_init( ADC_PIN);
     adc_select_input( ADC_NUM);
     //sleep_ms(1000);
-    printf("Starting Program\n");
+    printf("Ready ADC Program\n");
     //adc fifo 
     
     adc_fifo_setup(
@@ -256,6 +316,11 @@ int main()
     sleep_ms(1000);
     printf("Starting capture\n");
     adc_run(true);
+
+
+    //rtp setup
+    TxRtpSetup();
+    
     #endif
     //multicore_launch_core1(core1_entry);
 #ifdef _DHCP
@@ -350,7 +415,7 @@ int main()
             send_count++;
             mic_cnt = 0;
             */
-            
+            #if 0 //udp send data file
             for(i= 0; i<250; i++)
             {
                 adc_raw = adc_fifo_get_blocking();
@@ -379,11 +444,53 @@ int main()
             }*/
             //printf("send = %d \r\n",send_count);
             #endif
+            #endif
             
+            #if 1   // rtp test
+            rtp_data = (uint8_t *)calloc(512, sizeof(uint8_t));
+            if(rtp_data == 0)
+            {
+                printf("craet buff error \r\n");
+                continue;
+            }
+            rtp_data_current = rtp_data + 12;
+            for(i= 0; i<100; i++)
+            {
+                adc_raw = adc_fifo_get_blocking();
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
+                *rtp_data_current++ = adc_raw1 & 0x00ff;
+                *rtp_data_current++ = (adc_raw1 >> 8) & 0x00ff;
+            }
+            if (STATUS_OK != rtpAddHeader(rtp_data,12))
+            {
+                printf("Rtp Add Header failed");
+            }
+            sendto(UDP_SOCKET, rtp_data, 200+12, UDP_TestIP, UDP_SPORT);
+            free(rtp_data);
+            send_count++;
+            #endif
+            #if 0
+            rtp_data = (uint8_t *)calloc(172, sizeof(uint8_t));
+            if(rtp_data == 0)
+            {
+                printf("craet buff error \r\n");
+                continue;
+            }
+            rtp_data_current = rtp_data + 12;
+            memcpy(rtp_data_current, sample_packet, sizeof(uint8_t)*160);
+            if (STATUS_OK != rtpAddHeader(rtp_data,12))
+            {
+                printf("Rtp Add Header failed");
+            }
+            sendto(UDP_SOCKET, rtp_data, 172, UDP_TestIP, UDP_SPORT);
+            
+            free(rtp_data);
+            send_count++;
+            #endif
             
         }
         
-        if(send_count >= 2000)  
+        if(send_count >= 100)  
         {
             UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
             printf("send finish %d\r\n", send_count);
@@ -453,6 +560,8 @@ int main()
                     adc_run(true);
                     adc_fifo_drain();
                     data_send_status = 1;
+                    UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
+                    printf("send invice packet %d\r\n", send_count);
                     //adc_data.sendStatus = 1;
                 }
                 else if(strncmp(tcp_rcv_data, "stop", 4) == 0)
@@ -747,4 +856,26 @@ int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port)
    }
    return 1;
 }
+static StatusCode RtpGetRandomCb(uint32_t *random)
+{
+    *random = (uint32_t)(rand());//-0x80000000;
+
+    return STATUS_OK;
+}
+void TxRtpSetup()
+{
+    rtpConfig config;
+
+    memset(&config, 0, sizeof(config));
+
+    config.payloadType = 11;  //8 = G.711 PCMA  11 = L16
+    config.getRandomCb = RtpGetRandomCb;
+    config.periodicTimestampIncr = 16000 / 1000 * 20;
+
+    if(STATUS_OK != rtpInit(&config))
+    {
+        printf("RTP Init Failed",0);
+    }
+}
+
 
