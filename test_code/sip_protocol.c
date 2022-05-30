@@ -20,13 +20,15 @@ typedef struct SDP_message_body_t
     uint8_t *owner_username;
     uint32_t session_ID;
     uint32_t session_version;
+    uint8_t *session_name;
     uint8_t *network_type;
     uint8_t *address_type;
-    uint8_t address[4];
+    //uint8_t address[4];
     uint16_t start_time;
     uint16_t stop_time;
     uint8_t *media_type;
     uint16_t media_port;
+    uint8_t *media_protocol;
     uint8_t media_format;
     uint8_t *media_attr_fieldname;
     uint8_t *media_attr_mime_type;
@@ -35,7 +37,7 @@ typedef struct SDP_message_body_t
 
 typedef struct SDP_Data_t
 {
-    uint8_t sent_address[4];
+    uint8_t address[4];
     uint8_t *branch;
     uint8_t *rport;
     uint8_t *method;
@@ -54,6 +56,8 @@ typedef struct SDP_Data_t
     SDP_message_body message_body;
 }SDP_Data;
 
+char *SDP_packet_make(SDP_Data *data);
+
 int main()
 {
 
@@ -62,7 +66,7 @@ int main()
    char *message_b = 0;
    char *temp_message = 0;
    uint32_t temp_size = 0;
-
+    char *packet_data;
     SDP_Data session_data;
     session_data.from_data.display_info = "wiznet";
     session_data.from_data.user_part = 0x3796CB71;
@@ -78,6 +82,32 @@ int main()
     session_data.cseq = 1;
     session_data.content_type = "application/sdp";
     //session_data.content_length = 270;
+    session_data.date = "WED 25 May 2022 10:54:25 GMT";
+    session_data.max_forward = 70;
+    session_data.user_agent = "wiznet Version 0.0.0.0";
+    session_data.address[0]=192;
+    session_data.address[1]=168;
+    session_data.address[2]=0;
+    session_data.address[3]=125;
+
+    session_data.message_body.version = 0;
+    session_data.message_body.owner_username = "wiznet";
+    session_data.message_body.session_ID = 24466422;
+    session_data.message_body.session_version = 24466418;
+    session_data.message_body.address_type = "IP4";
+    session_data.message_body.network_type = "IN";
+    session_data.message_body.start_time = 0;
+    session_data.message_body.stop_time = 0;
+    session_data.message_body.media_type = "audio";
+    session_data.message_body.media_port = 30000;
+    session_data.message_body.media_protocol = "RTP/AVP";
+    session_data.message_body.session_name = "SIP call";
+    session_data.message_body.media_format = 0;
+    session_data.message_body.media_attr_fieldname = "rtpmap";
+    session_data.message_body.media_attr_mime_type = "L16";
+    session_data.message_body.media_attr_sample_rate = 8000;
+
+    packet_data = SDP_packet_make(&session_data);
     
     
     //temp_size = sizeof(session_data.from_data.display_info) + sizeof(session_data.from_data.host_part);
@@ -102,3 +132,10 @@ int main()
    #endif
    return 0;
 } 
+
+char *SDP_packet_make(SDP_Data *data)
+{
+    uint16_t packet_size = 0;
+    packet_size = strlen(data->method) + strlen(data->)
+    return 0;
+}
