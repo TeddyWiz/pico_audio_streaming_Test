@@ -56,7 +56,7 @@ typedef struct SDP_Data_t
     SDP_message_body message_body;
 }SDP_Data;
 
-char *SDP_packet_make(SDP_Data *data);
+uint8_t *SDP_packet_make(SDP_Data *data);
 
 int main()
 {
@@ -66,7 +66,7 @@ int main()
    char *message_b = 0;
    char *temp_message = 0;
    uint32_t temp_size = 0;
-    char *packet_data;
+    uint8_t *packet_data;
     SDP_Data session_data;
     session_data.from_data.display_info = "wiznet";
     session_data.from_data.user_part = 0x3796CB71;
@@ -108,11 +108,13 @@ int main()
     session_data.message_body.media_attr_sample_rate = 8000;
 
     packet_data = SDP_packet_make(&session_data);
-    
+    printf("packet data[%d]:[%s]\r\n", strlen(packet_data), packet_data);
+    free(packet_data);
+    printf("end program\r\n");
     
     //temp_size = sizeof(session_data.from_data.display_info) + sizeof(session_data.from_data.host_part);
-    temp_size = strlen(session_data.from_data.host_part);
-    printf("%d : display info : %s, user port : %08x \r\n",temp_size, session_data.from_data.display_info, session_data.from_data.user_part);
+    //temp_size = strlen(session_data.from_data.host_part);
+    //printf("%d : display info : %s, user port : %08x \r\n",temp_size, session_data.from_data.display_info, session_data.from_data.user_part);
 
     #if 0
    request_L = calloc(62, sizeof(char));
@@ -133,9 +135,20 @@ int main()
    return 0;
 } 
 
-char *SDP_packet_make(SDP_Data *data)
+uint8_t *SDP_packet_make(SDP_Data *data)
 {
-    uint16_t packet_size = 0;
-    packet_size = strlen(data->method) + strlen(data->)
-    return 0;
+    uint16_t packet_size = 0, res_size = 0;
+    uint8_t *res_data1 = 0;
+    packet_size = strlen(data->method) + strlen(data->to_data.host_part) +14+8;
+    res_data1 = malloc(sizeof(char) * packet_size);
+    if(res_data1 == 0)
+    {
+        printf("data creat error !!\r\n");
+        return -1;
+    }
+    res_size =sprintf((char *)res_data1, "%s sip:%08x@%s SIP/2.0\r\n", data->method, data->to_data.user_part, data->to_data.host_part);
+    printf("cal size : %d, gen size %d \r\n data: [%s]\r\n", packet_size, res_size, res_data1);
+    //free(res_data1);
+    //return 0;
+    return res_data1;
 }
