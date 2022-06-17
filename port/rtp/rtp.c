@@ -27,6 +27,7 @@
 #include <string.h>
 #include "rtp.h"
 
+#include <stdio.h>
 #define RTP_VERSION         2
 
 #define HTON32(H32)         (__builtin_bswap32(H32))
@@ -70,6 +71,11 @@ static struct
 
 } rtpDataStore;
 
+uint32_t get_ssrc(void)
+{
+    return rtpDataStore.ssrc;
+}
+
 StatusCode rtpGetRand(uint32_t *random)
 {
     return rtpDataStore.config.getRandomCb(random);
@@ -103,7 +109,12 @@ StatusCode rtpInit(const rtpConfig *config)
     {
         return status;
     }
+    rtpDataStore.periodicTimestamp = (rtpDataStore.periodicTimestamp >> 16) & 0x00ff;
 
+    rtpDataStore.ssrc = 0x3796cb71;
+    sequenceNumber = 0x6faf;
+    rtpDataStore.periodicTimestamp = 0x00000578;
+    printf("ssrc: 0x%8X , seqNo: 0x%4X, TimeStamp: 0x%8X \r\n", rtpDataStore.ssrc, sequenceNumber, rtpDataStore.periodicTimestamp );
     return STATUS_OK;
 }
 

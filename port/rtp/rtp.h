@@ -75,6 +75,7 @@ typedef struct {
 /******************************************************************************/
 
 StatusCode rtpInit(const rtpConfig *config);
+uint32_t get_ssrc(void);
 StatusCode rtpShutdown(void);
 StatusCode rtpAddHeader(uint8_t *data,
                        uint32_t length);

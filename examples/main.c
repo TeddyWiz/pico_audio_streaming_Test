@@ -33,10 +33,12 @@
 #include "hardware/uart.h"
 #include "pico/binary_info.h"
 
+#include "pico/stdlib.h"
 #include "pico/multicore.h"
 
 #include "rtp.h"
-
+#include "sdp_proto.h"
+#include "g711.h"
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -65,7 +67,9 @@
 #define ADC_VREF 3.3
 #define ADC_RANGE (1 << 12)
 #define ADC_CONVERT (ADC_VREF / (ADC_RANGE - 1))
-
+#define ADC_CLK_VAL  5999//2999 
+#define ADC_SAMPLE_COUNT   100
+#define DATACNT 2000
 /**
   * ----------------------------------------------------------------------------------------------------
   * Variables
@@ -76,7 +80,7 @@
 static wiz_NetInfo g_net_info =
     {
         .mac = {0x00, 0x08, 0xDC, 0x12, 0x34, 0x68}, // MAC address
-        .ip = {192, 168, 0, 125},                     // IP address
+        .ip = {192, 168, 15, 125},                     // IP address
         .sn = {255, 255, 255, 0},                    // Subnet Mask
         .gw = {192, 168, 0, 1},                     // Gateway
         .dns = {8, 8, 8, 8},                         // DNS server
@@ -184,6 +188,10 @@ void core1_entry() {
     }
 }
 
+char temp_repeating_timer_callback(struct repeating_timer *t) {
+    //printf("Repeat at %lld\n", time_us_64());
+    return true;
+}
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -204,9 +212,9 @@ int main()
     uint8_t *tcp_rcv_data = 0;
     uint16_t tcp_rcv_size = 0;
     uint8_t UDP_BroadIP[4] = {255,255,255,255};
-    uint8_t UDP_TestIP[4] = {192,168,0,3};
+    uint8_t UDP_TestIP[4] = {192,168,15,2};
     int32_t UDP_ret = 0;
-    uint8_t TCP_Client_DestIp[4] = {192, 168, 0, 3};
+    uint8_t TCP_Client_DestIp[4] = {192, 168, 15, 2};
     uint16_t TCP_Client_Port = 22000;
     uint16_t TCP_C_status = 0;
     uint8_t *tcp_c_rcv_data = 0;
@@ -214,7 +222,7 @@ int main()
     int tcp_c_ret = 0;
 
     //int8_t mic_Data[2048];
-    int8_t mic_Data[200000];
+    int8_t mic_Data[1000];
     
     uint32_t mic_cnt = 0;
     uint8_t data_send_status = 0;
@@ -224,6 +232,7 @@ int main()
     uint16_t adc_raw1 = 0;
     uint32_t i= 0;
     uint16_t random_data = 0;
+    uint64_t pre_time_stamp = 0;
     //rtp data
     int8_t *rtp_data = 0;
     int8_t *rtp_data_current = 0;
@@ -271,6 +280,52 @@ int main()
         "a=rtpmap:3 GSM/8000\n"\
         "a=fmtp:97 mode=20\n"\
         "a=sendrecv\n";
+    uint8_t *packet_data;
+    SDP_Data session_data;
+    session_data.from_data.display_info = "wiznet";
+    session_data.from_data.user_part = 0x3796CB71;
+    session_data.from_data.host_part = "sip.wiznet.io";
+    session_data.from_data.tag = 0xb56e6e;
+
+    session_data.to_data.user_part = 0x35104723;
+    session_data.to_data.host_part = "sip.wiznet.io";
+    session_data.method = "INVITE";
+    session_data.branch = "z9hG4bKnp10144774-4725f980";
+    session_data.rport = "rport";
+    session_data.call_ID = "11894297-4432a9f8";
+    session_data.cseq = 1;
+    session_data.content_type = "application/sdp";
+    //session_data.content_length = 270;
+    session_data.date = "WED 25 May 2022 10:54:25 GMT";
+    session_data.max_forward = 70;
+    session_data.user_agent = "wiznet Version 0.0.0.0";
+    session_data.allow = "INVITE, ACK, CANCEL, BYE, REFER, OPTiONS, NOTIFY, INFO";
+    session_data.address[0]=192;
+    session_data.address[1]=168;
+    session_data.address[2]=15;
+    session_data.address[3]=125;
+    session_data.expires = 120;
+
+    session_data.message_body.version = 0;
+    session_data.message_body.owner_username = "wiznet";
+    session_data.message_body.session_ID = 24466422;
+    session_data.message_body.session_version = 24466418;
+    session_data.message_body.address_type = "IP4";
+    session_data.message_body.network_type = "IN";
+    session_data.message_body.start_time = 0;
+    session_data.message_body.stop_time = 0;
+    session_data.message_body.media_type = "audio";
+    session_data.message_body.media_port = 30000;
+    session_data.message_body.media_protocol = "RTP/AVP";
+    session_data.message_body.session_name = "SIP call";
+    session_data.message_body.media_format = 8;//11;//0;//11;
+    session_data.message_body.media_attr_fieldname = "rtpmap";
+    session_data.message_body.media_attr_mime_type = "PCMA";//"PCMU";//"L16";
+    session_data.message_body.media_attr_sample_rate = 8000;//16000;
+
+    
+    
+    
     memset(&adc_data, 0, sizeof(ADC_DATA_STATUS));
     adc_data.sendComplete = 1;
     stdio_init_all();
@@ -297,6 +352,8 @@ int main()
     printf("random2 = %x\r\n ", random_data);
     //random_data = (rand() >> 16) >> 16;
     printf("random3 = %08X\r\n ", (uint32_t)((rand())));
+    struct repeating_timer timer;
+    add_repeating_timer_ms(500, temp_repeating_timer_callback, NULL, &timer);
 #if 1
     adc_init();
     adc_gpio_init( ADC_PIN);
@@ -312,7 +369,7 @@ int main()
         true,   // We won't see the ERR bit because of 8 bit reads; disable.
         false     // Shift each sample to 8 bits when pushing to FIFO
     );
-    adc_set_clkdiv(1087);// (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s 1087=44118S/s
+    adc_set_clkdiv(ADC_CLK_VAL);//2999= 16kS/s  (1+999)/48Mhz = 48kS/s   199=240kS/s  239=200kS/s 1087=44118S/s
     sleep_ms(1000);
     printf("Starting capture\n");
     adc_run(true);
@@ -320,7 +377,15 @@ int main()
 
     //rtp setup
     TxRtpSetup();
-    
+    packet_data = SDP_packet_make(&session_data);
+    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
+    rtp_data = (uint8_t *)calloc(512, sizeof(uint8_t));
+    if(rtp_data == 0)
+    {
+        printf("craet buff error \r\n");
+        return 0;
+        //continue;
+    }
     #endif
     //multicore_launch_core1(core1_entry);
 #ifdef _DHCP
@@ -377,166 +442,54 @@ int main()
         //wizchip_delay_ms(1000); // wait for 1 second
         //loopback_tcps(TCP_S_SOCKET, tcp_buff, TCP_S_PORT);
         #if 1
-        //adc
-        //adc_raw = adc_read(); // raw voltage from ADC
-        //adc fifo
-        //adc_raw = adc_fifo_get_blocking();
-        #if 1
         if(data_send_status == 1)
         {
-            #if 0
-            for(i= 0; i<736; i++)
-            {
-                adc_raw = adc_fifo_get_blocking();
-                //adc_raw = adc_read();
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10); 
-                mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
-                mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
-                #if 0
-                adc_raw11.fdata = adc_raw * ADC_CONVERT;
-                mic_Data[mic_cnt++] = (adc_raw11.hdata >> 8) & 0x00ff;
-                mic_Data[mic_cnt++] = adc_raw11.hdata & 0x00ff;
-                #endif
-            }
-            sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
-            //printf("send %d\r\n", mic_cnt);
-            //printf("0x%04x | 0x%08x %.2f 0x%08x %.2f | %02x %02x | %02x %02x | %02x %02x| \r\n",adc_raw ,adc_raw*ADC_CONVERT, adc_raw*ADC_CONVERT, adc_raw11.hdata, adc_raw11.fdata, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
-            //printf("0x%04x  0x%04x | %02x %02x | %02x %02x | %02x %02x| \r\n", adc_raw, adc_raw1, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
-            mic_cnt = 0;
-            send_count++;
-            #else
-            /*
-            adc_raw = adc_fifo_get_blocking();
-            //adc_raw = adc_read();
-            adc_raw1 = (adc_raw&0x0fff) - (1<<10);
-            mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
-            mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
-            sendto(UDP_SOCKET, mic_Data, 2, UDP_BroadIP, UDP_SPORT);
-            send_count++;
-            mic_cnt = 0;
-            */
-            #if 0 //udp send data file
-            for(i= 0; i<250; i++)
-            {
-                adc_raw = adc_fifo_get_blocking();
-                //adc_raw = adc_read();
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
-                mic_Data[mic_cnt++] = adc_raw1 & 0x00ff;
-                mic_Data[mic_cnt++] = (adc_raw1 >> 8) & 0x00ff;
-                #if 0
-                adc_raw11.fdata = adc_raw * ADC_CONVERT;
-                mic_Data[mic_cnt++] = (adc_raw11.hdata >> 8) & 0x00ff;
-                mic_Data[mic_cnt++] = adc_raw11.hdata & 0x00ff;
-                #endif
-            }
-            //sendto(UDP_SOCKET, mic_Data, mic_cnt, UDP_BroadIP, UDP_SPORT);
-            //printf("send %d\r\n", mic_cnt);
-            //printf("0x%04x | 0x%08x %.2f 0x%08x %.2f | %02x %02x | %02x %02x | %02x %02x| \r\n",adc_raw ,adc_raw*ADC_CONVERT, adc_raw*ADC_CONVERT, adc_raw11.hdata, adc_raw11.fdata, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
-            //printf("0x%04x  0x%04x | %02x %02x | %02x %02x | %02x %02x| \r\n", adc_raw, adc_raw1, mic_Data[0]&0x00ff, mic_Data[1]&0x00ff ,mic_Data[2]&0x00ff, mic_Data[3]&0x00ff, mic_Data[4]&0x00ff, mic_Data[5]&0x00ff);
-            mic_cnt = 0;
-            send_count++;
-            sendto(UDP_SOCKET, mic_Data, 500, UDP_BroadIP, UDP_SPORT);
-            /*
-            for(i=0; i<1; i++)
-            {
-                //printf("cnt = %d , %d\r\n",i, i*1472);
-                sendto(UDP_SOCKET, mic_Data+(i * 1472), 1472, UDP_BroadIP, UDP_SPORT);
-            }*/
-            //printf("send = %d \r\n",send_count);
-            #endif
-            #endif
             
             #if 1   // rtp test
-            rtp_data = (uint8_t *)calloc(512, sizeof(uint8_t));
-            if(rtp_data == 0)
-            {
-                printf("craet buff error \r\n");
-                continue;
-            }
+           
             rtp_data_current = rtp_data + 12;
-            for(i= 0; i<100; i++)
+            for(i= 0; i<ADC_SAMPLE_COUNT; i++)
             {
                 adc_raw = adc_fifo_get_blocking();
+                #if 0   //file make
                 adc_raw1 = (adc_raw&0x0fff) - (1<<10);
                 *rtp_data_current++ = adc_raw1 & 0x00ff;
                 *rtp_data_current++ = (adc_raw1 >> 8) & 0x00ff;
+                #endif
+                #if 0  //L16
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
+                *rtp_data_current++ = (adc_raw1 >> 8) & 0x00ff;
+                *rtp_data_current++ = adc_raw1 & 0x00ff;
+                #endif
+                #if 1  //PCMA G711
+                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
+                *rtp_data_current++ = ALaw_Encode(adc_raw1);
+                //*rtp_data_current++ = adc_raw1 & 0x00ff;
+                #endif
             }
             if (STATUS_OK != rtpAddHeader(rtp_data,12))
             {
                 printf("Rtp Add Header failed");
             }
-            sendto(UDP_SOCKET, rtp_data, 200+12, UDP_TestIP, UDP_SPORT);
-            free(rtp_data);
+            UDP_ret=sendto(UDP_SOCKET, rtp_data, ADC_SAMPLE_COUNT + 12, UDP_BroadIP, UDP_SPORT);
+            
+            printf("data send : %d[%lld][%lld]\r\n",UDP_ret, pre_time_stamp, time_us_64() - pre_time_stamp);
+            pre_time_stamp = time_us_64();
             send_count++;
             #endif
-            #if 0
-            rtp_data = (uint8_t *)calloc(172, sizeof(uint8_t));
-            if(rtp_data == 0)
+            if(send_count >= DATACNT)  
             {
-                printf("craet buff error \r\n");
-                continue;
+                UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
+                printf("send finish %d\r\n", send_count);
+                data_send_status = 0;
+                send_count = 0;
+                adc_run(false);
             }
-            rtp_data_current = rtp_data + 12;
-            memcpy(rtp_data_current, sample_packet, sizeof(uint8_t)*160);
-            if (STATUS_OK != rtpAddHeader(rtp_data,12))
-            {
-                printf("Rtp Add Header failed");
-            }
-            sendto(UDP_SOCKET, rtp_data, 172, UDP_TestIP, UDP_SPORT);
-            
-            free(rtp_data);
-            send_count++;
-            #endif
-            
         }
-        
-        if(send_count >= 100)  
-        {
-            UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
-            printf("send finish %d\r\n", send_count);
-            data_send_status = 0;
-            send_count = 0;
-            adc_run(false);
-        }
-        
         #endif
-        //printf("%.2f\n", adc_raw * ADC_CONVERT);
-
         //TCP_C_status =TCP_client(TCP_C_SOCKET, TCP_Client_DestIp, TCP_Client_Port);
         UDP_S_status = udps_status(UDP_SOCKET, UDP_buff, UDP_PORT);
         TCP_S_status = TCP_Server(TCP_S_SOCKET, TCP_S_PORT);
-        #if 0
-        if(TCP_C_status == 17)
-        {
-            tcp_c_rcv_data = TCP_S_Recv(TCP_C_SOCKET, &tcp_c_rcv_size);
-            if(tcp_c_rcv_data != 0)
-            {
-                printf("rcv[%d] : %s \r\n",tcp_c_rcv_size, tcp_c_rcv_data);
-                tcp_c_ret = send(TCP_C_SOCKET, tcp_c_rcv_data, tcp_c_rcv_size); // Data send process (User's buffer -> Destination through H/W Tx socket buffer)
-				if(tcp_c_ret < 0) // Send Error occurred (sent data length < 0)
-				{
-					close(TCP_C_SOCKET); // socket close
-					printf("TCP Client Sedn message Error !! \r\n");
-				}
-                
-                if(strncmp(tcp_c_rcv_data, "ready", 5) == 0)
-                {
-                    printf("client data recv ready\r\n");
-                    data_send_status = 1;
-                }
-                if(data_send_status ==1)
-                {
-                    if(mic_cnt > 191999)
-                    {
-                        data_send_status = 0;
-                        tcp_c_ret = send(TCP_C_SOCKET, mic_Data, mic_cnt);
-                        printf("client data send complite %d\r\n", tcp_c_ret);
-                    }
-                }
-                free(tcp_c_rcv_data);
-            }
-        }
-        #endif
         if(TCP_S_status == 17)
         {
             //TCP_Server_Buf = TCP_S_Recv(TCP_S_SOCKET);
@@ -560,9 +513,11 @@ int main()
                     adc_run(true);
                     adc_fifo_drain();
                     data_send_status = 1;
-                    UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
-                    printf("send invice packet %d\r\n", send_count);
-                    //adc_data.sendStatus = 1;
+                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
+                    UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
+                    
+                    printf("send invice packet %d\r\n", UDP_ret);
+                    adc_data.sendStatus = 1;
                 }
                 else if(strncmp(tcp_rcv_data, "stop", 4) == 0)
                 {
@@ -573,16 +528,10 @@ int main()
                 }
                 free(tcp_rcv_data);
             }
-            #if 0
-            if(TCP_Server_Buf->RCV_Size > 0 )
-            {
-                printf("size %d : %s|", TCP_Server_Buf->RCV_Size, TCP_Server_Buf->RCV_DATA);
-                free(TCP_Server_Buf->RCV_DATA);
-            }
-            #endif
         }
-        #endif
     }
+    free(rtp_data);
+    free(packet_data);
 }
 
 /**
@@ -868,9 +817,9 @@ void TxRtpSetup()
 
     memset(&config, 0, sizeof(config));
 
-    config.payloadType = 11;  //8 = G.711 PCMA  11 = L16
+    config.payloadType = 8;//0;//11;  //8 = G.711 PCMA  11 = L16
     config.getRandomCb = RtpGetRandomCb;
-    config.periodicTimestampIncr = 16000 / 1000 * 20;
+    config.periodicTimestampIncr = 8000 / 1000 * 12.4;//16000 / 1000 * 6.6;//20;
 
     if(STATUS_OK != rtpInit(&config))
     {

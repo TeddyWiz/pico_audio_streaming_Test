@@ -13,6 +13,7 @@ target_include_directories(SPI_FILES PUBLIC
 
 target_link_libraries(SPI_FILES PRIVATE
         pico_stdlib
+        pico_multicore
         hardware_spi
         hardware_dma
         hardware_clocks
@@ -66,6 +67,8 @@ add_library(RTP_FILES STATIC)
 
 target_sources(RTP_FILES PUBLIC
         ${PORT_DIR}/rtp/rtp.c
+        ${PORT_DIR}/rtp/sdp_proto.c
+        ${PORT_DIR}/rtp/g711.c
         )
 
 target_include_directories(RTP_FILES PUBLIC
