@@ -69,6 +69,7 @@ target_sources(RTP_FILES PUBLIC
         ${PORT_DIR}/rtp/rtp.c
         ${PORT_DIR}/rtp/sdp_proto.c
         ${PORT_DIR}/rtp/g711.c
+        ${PORT_DIR}/rtp/temp_eth_lib.c
         )
 
 target_include_directories(RTP_FILES PUBLIC

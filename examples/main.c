@@ -14,11 +14,15 @@
 #include <string.h>
 
 #include "port_common.h"
-
+/*
 #include "wizchip_conf.h"
 #include "w5x00_spi.h"
 #include "socket.h"
 #include "loopback.h"
+*/
+#include "wizchip_conf.h"
+#include "w5x00_spi.h"
+
 
 #include "dhcp.h"
 #include "dns.h"
@@ -39,6 +43,7 @@
 #include "rtp.h"
 #include "sdp_proto.h"
 #include "g711.h"
+#include "temp_eth_lib.h"
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -51,13 +56,11 @@
 #define APP_C2D
 //#define APP_CLI_X509
 //#define APP_PROV_X509
-
-#define TCP_S_DEBUG_
 #define TCP_S_SOCKET 0
 #define TCP_S_PORT 20000
 #define UDP_SOCKET 1
 #define UDP_PORT 30000
-#define UDP_SPORT 40392
+#define UDP_SPORT 30002//40392//30002
 #define TCP_C_SOCKET 2
 
 
@@ -130,68 +133,10 @@ ADC_DATA_STATUS adc_data;
 /* Timer callback */
 static void repeating_timer_callback(void);
 
-uint16_t TCP_Server(uint8_t sn, uint16_t port);
-uint16_t TCP_client(uint8_t sn, uint8_t* destip, uint16_t destport);
-
-//TCP_S_RSV_DATA *TCP_S_Recv(uint8_t sn);
-//uint8_t *TCP_S_Recv(uint8_t sn);
-uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size);
-int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port);
-
 //rtp function
 static StatusCode RtpGetRandomCb(uint32_t *random);
 void TxRtpSetup();
 
-
-void core1_entry() {
-    uint16_t adc_raw = 0;
-    
-    adc_init();
-    adc_gpio_init( ADC_PIN);
-    adc_select_input( ADC_NUM);
-    //sleep_ms(1000);
-    
-    //adc fifo 
-    
-    adc_fifo_setup(
-        true,    // Write each completed conversion to the sample FIFO
-        true,    // Enable DMA data request (DREQ)
-        1,       // DREQ (and IRQ) asserted when at least 1 sample present
-        true,   // We won't see the ERR bit because of 8 bit reads; disable.
-        false     // Shift each sample to 8 bits when pushing to FIFO
-    );
-    //adc_set_clkdiv(999);  // (1+999)/48Mhz = 48kS/s
-    
-    printf("Starting capture\n");
-    adc_run(true);
-    while(1)
-    {
-        if(adc_data.sendStatus == 0)
-        {
-            if(adc_data.dataCount >= 2048)
-            {
-                if(adc_data.sendComplete == 1)
-                {
-                    adc_data.inputPosition =  adc_data.inputPosition == 0 ? 1 : 0;
-                    adc_data.dataCount = 0;
-                }
-                //else
-                //    continue;
-                
-            }
-            adc_raw = adc_fifo_get_blocking();
-            adc_data.DATA[adc_data.inputPosition][adc_data.dataCount++] = (adc_raw >> 8) & 0x00ff;
-            adc_data.DATA[adc_data.inputPosition][adc_data.dataCount++] = adc_raw & 0x00ff;
-            printf("%d r:%04x \r\n", adc_data.dataCount, adc_raw);
-            
-        }
-    }
-}
-
-char temp_repeating_timer_callback(struct repeating_timer *t) {
-    //printf("Repeat at %lld\n", time_us_64());
-    return true;
-}
 
 /**
   * ----------------------------------------------------------------------------------------------------
@@ -220,11 +165,12 @@ int main()
     uint8_t *tcp_c_rcv_data = 0;
     uint16_t tcp_c_rcv_size = 0;
     int tcp_c_ret = 0;
+    uint16_t udp_send_port = 30001;
 
     //int8_t mic_Data[2048];
-    int8_t mic_Data[1000];
+    //int8_t mic_Data[1000];
     
-    uint32_t mic_cnt = 0;
+    //uint32_t mic_cnt = 0;
     uint8_t data_send_status = 0;
     uint32_t send_count = 0;
     
@@ -233,6 +179,7 @@ int main()
     uint32_t i= 0;
     uint16_t random_data = 0;
     uint64_t pre_time_stamp = 0;
+    uint64_t now_time_stamp = 0;
     //rtp data
     int8_t *rtp_data = 0;
     int8_t *rtp_data_current = 0;
@@ -250,29 +197,29 @@ int main()
      0x6a, 0x17, 0x15, 0x65, 0x43, 0x71, 0x5a, 0x59, 0x7e, 0x60, 0x66, 0x7a, 0x72, 0x72, 0x49, 0x65,\
      0x7a, 0x60, 0x78, 0x5d, 0x44, 0x42};
 
-     uint8_t Temp_invite[1049] = \
+     uint8_t Temp_invite[1056] = \
         "INVITE sip:3796CB71@sip.cybercity.dk SIP/2.0\n"\
-        "Via: SIP/2.0/UDP 192.168.0.125;branch=z9hG4bKnp10144774-4725f980192.168.0.125;rport\n"\
+        "Via: SIP/2.0/UDP 192.168.15.125;branch=z9hG4bKnp10144774-4725f980192.168.15.125;rport\n"\
         "From: \"arik\" <sip:35104723@sip.cybercity.dk>;tag=b56e6e\n"\
         "To: <sip:3796CB71@sip.cybercity.dk>\n"\
-        "Call-ID: 11894297-4432a9f8@192.168.0.125\n"\
+        "Call-ID: 11894297-4432a9f8@192.168.15.125\n"\
         "CSeq: 2 INVITE\n"\
-        "Proxy-Authorization: Digest username=\"voi18062\",realm=\"sip.cybercity.dk\",uri=\"sip:192.168.0.125\",nonce=\"1701ba6557c1e1b4223e887e293cfa8\",opaque=\"1701a1351f70795\",nc=\"00000001\",response=\"83e1608f6d9ad38597ac6bbe4d3aafae\"\n"\
+        "Proxy-Authorization: Digest username=\"voi18062\",realm=\"sip.cybercity.dk\",uri=\"sip:192.168.15.125\",nonce=\"1701ba6557c1e1b4223e887e293cfa8\",opaque=\"1701a1351f70795\",nc=\"00000001\",response=\"83e1608f6d9ad38597ac6bbe4d3aafae\"\n"\
         "Content-Type: application/sdp\n"\
-        "Content-Length: 270\n"\
+        "Content-Length: 272\n"\
         "Date: Mon, 04 Jul 2005 09:56:06 GMT\n"\
-        "Contact: <sip:35104723@192.168.0.125>\n"\
+        "Contact: <sip:35104723@192.168.15.125>\n"\
         "Expires: 120\n"\
         "Accept: application/sdp\n"\
         "Max-Forwards: 70\n"\
         "User-Agent: Nero SIPPS IP Phone Version 2.0.51.16\n"\
         "Allow: INVITE, ACK, CANCEL, BYE, REFER, OPTIONS, NOTIFY, INFO\n\n"\
         "v=0\n"\
-        "o=SIPPS 11888330 11888327 IN IP4 192.168.0.125\n"\
+        "o=SIPPS 11888330 11888327 IN IP4 192.168.15.125\n"\
         "s=SIP call\n"\
-        "c=IN IP4 192.168.0.125\n"\
+        "c=IN IP4 192.168.15.125\n"\
         "t=0 0\n"\
-        "m=audio 30000 RTP/AVP 0 8 97 2 3\n"\
+        "m=audio 30002 RTP/AVP 0 8 97 2 3\n"\
         "a=rtpmap:0 L16/41100\n"\
         "a=rtpmap:8 pcma/8000\n"\
         "a=rtpmap:97 iLBC/8000\n"\
@@ -280,6 +227,7 @@ int main()
         "a=rtpmap:3 GSM/8000\n"\
         "a=fmtp:97 mode=20\n"\
         "a=sendrecv\n";
+        
     uint8_t *packet_data;
     SDP_Data session_data;
     session_data.from_data.display_info = "wiznet";
@@ -307,22 +255,23 @@ int main()
     session_data.expires = 120;
 
     session_data.message_body.version = 0;
-    session_data.message_body.owner_username = "wiznet";
-    session_data.message_body.session_ID = 24466422;
+    session_data.message_body.owner_username = "WIZNET";
+    session_data.message_body.session_information ="the session test protocol of wiznet";
+    session_data.message_body.session_ID = 24466424;
     session_data.message_body.session_version = 24466418;
     session_data.message_body.address_type = "IP4";
     session_data.message_body.network_type = "IN";
     session_data.message_body.start_time = 0;
     session_data.message_body.stop_time = 0;
     session_data.message_body.media_type = "audio";
-    session_data.message_body.media_port = 30000;
+    session_data.message_body.media_port = UDP_PORT;
     session_data.message_body.media_protocol = "RTP/AVP";
-    session_data.message_body.session_name = "SIP call";
+    session_data.message_body.session_name = "WIZNET Test";
     session_data.message_body.media_format = 8;//11;//0;//11;
     session_data.message_body.media_attr_fieldname = "rtpmap";
     session_data.message_body.media_attr_mime_type = "PCMA";//"PCMU";//"L16";
     session_data.message_body.media_attr_sample_rate = 8000;//16000;
-
+    session_data.message_body.fmtp_type = 78;
     
     
     
@@ -352,8 +301,8 @@ int main()
     printf("random2 = %x\r\n ", random_data);
     //random_data = (rand() >> 16) >> 16;
     printf("random3 = %08X\r\n ", (uint32_t)((rand())));
-    struct repeating_timer timer;
-    add_repeating_timer_ms(500, temp_repeating_timer_callback, NULL, &timer);
+    //struct repeating_timer timer;
+    //add_repeating_timer_ms(500, temp_repeating_timer_callback, NULL, &timer);
 #if 1
     adc_init();
     adc_gpio_init( ADC_PIN);
@@ -377,8 +326,9 @@ int main()
 
     //rtp setup
     TxRtpSetup();
-    packet_data = SDP_packet_make(&session_data);
-    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
+    printf("send RTP port %d \r\n", UDP_SPORT);
+    //packet_data = SDP_packet_make(&session_data);
+    //printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
     rtp_data = (uint8_t *)calloc(512, sizeof(uint8_t));
     if(rtp_data == 0)
     {
@@ -387,7 +337,6 @@ int main()
         //continue;
     }
     #endif
-    //multicore_launch_core1(core1_entry);
 #ifdef _DHCP
     // this example uses DHCP
     networkip_setting = wizchip_network_initialize(true, &g_net_info);
@@ -439,8 +388,6 @@ int main()
                 ;
         }
 #endif
-        //wizchip_delay_ms(1000); // wait for 1 second
-        //loopback_tcps(TCP_S_SOCKET, tcp_buff, TCP_S_PORT);
         #if 1
         if(data_send_status == 1)
         {
@@ -464,7 +411,6 @@ int main()
                 #if 1  //PCMA G711
                 adc_raw1 = (adc_raw&0x0fff) - (1<<10);
                 *rtp_data_current++ = ALaw_Encode(adc_raw1);
-                //*rtp_data_current++ = adc_raw1 & 0x00ff;
                 #endif
             }
             if (STATUS_OK != rtpAddHeader(rtp_data,12))
@@ -472,19 +418,28 @@ int main()
                 printf("Rtp Add Header failed");
             }
             UDP_ret=sendto(UDP_SOCKET, rtp_data, ADC_SAMPLE_COUNT + 12, UDP_BroadIP, UDP_SPORT);
-            
-            printf("data send : %d[%lld][%lld]\r\n",UDP_ret, pre_time_stamp, time_us_64() - pre_time_stamp);
-            pre_time_stamp = time_us_64();
+            now_time_stamp = time_us_64();
+            printf("data send : %d[%lld][%lld]\r\n",UDP_ret, pre_time_stamp, now_time_stamp - pre_time_stamp);
+            pre_time_stamp = now_time_stamp;
             send_count++;
             #endif
+            #if 1           //limit streaming
             if(send_count >= DATACNT)  
             {
-                UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, UDP_SPORT);
+                //UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, udp_send_port);
                 printf("send finish %d\r\n", send_count);
                 data_send_status = 0;
                 send_count = 0;
                 adc_run(false);
+                session_data.method = "BYE";
+                packet_data = SDP_packet_make(&session_data);
+                printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
+                //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1056, UDP_BroadIP, UDP_SPORT); //1049
+                UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
+                free(packet_data);
+                printf("send bye packet %d\r\n", UDP_ret);
             }
+            #endif
         }
         #endif
         //TCP_C_status =TCP_client(TCP_C_SOCKET, TCP_Client_DestIp, TCP_Client_Port);
@@ -510,12 +465,32 @@ int main()
                 {
                     printf(" data  send start\r\n");
                     //UDP_ret = sendto(UDP_SOCKET, "START", 5, UDP_BroadIP, UDP_SPORT);
+                    /*
+                    if(tcp_rcv_size > 6)
+                    {
+                        udp_send_port = atoi(tcp_rcv_data + 6);
+                    }
+                    else
+                        printf("short msg not port number\r\n");
+                    if(udp_send_port <= 0)
+                    {
+                        udp_send_port = UDP_SPORT;
+                        printf("change Default Port : %d\r\n", UDP_SPORT);
+                    }
+                    session_data.message_body.media_port = udp_send_port;
+                    */
+                    printf("recv port = %d \r\n", UDP_SPORT);
+                    send(TCP_S_SOCKET, "START RTP Streaming\r\n", strlen("START RTP Streaming\r\n"));
                     adc_run(true);
                     adc_fifo_drain();
                     data_send_status = 1;
-                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
+                    session_data.method = "INVITE";
+                    session_data.to_data.user_part++;
+                    packet_data = SDP_packet_make(&session_data);
+                    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
+                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1056, UDP_BroadIP, UDP_SPORT);
                     UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
-                    
+                    free(packet_data);
                     printf("send invice packet %d\r\n", UDP_ret);
                     adc_data.sendStatus = 1;
                 }
@@ -525,13 +500,21 @@ int main()
                     data_send_status = 0;
                     //adc_data.sendStatus = 0;
                     adc_run(false);
+                    send(TCP_S_SOCKET, "STOP RTP Streaming\r\n", strlen("STOP RTP Streaming\r\n"));
+                    session_data.method = "BYE";
+                    packet_data = SDP_packet_make(&session_data);
+                    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
+                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
+                    UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
+                    free(packet_data);
+                    printf("send bye packet %d\r\n", UDP_ret);
                 }
                 free(tcp_rcv_data);
             }
         }
     }
     free(rtp_data);
-    free(packet_data);
+    //free(packet_data);
 }
 
 /**
@@ -554,257 +537,6 @@ static void repeating_timer_callback(void)
 #endif
 }
 
-uint16_t TCP_Server(uint8_t sn, uint16_t port)
-{
-   int32_t ret;
-   uint8_t destip[4];
-    uint16_t destport;
-
-   switch(getSn_SR(sn))
-   {
-      case SOCK_ESTABLISHED :
-            //TCP_S_Recv(sn);
-            #if 0
-            if(getSn_IR(sn) & Sn_IR_CON)
-         {
-#ifdef _LOOPBACK_DEBUG_
-			getSn_DIPR(sn, destip);
-			destport = getSn_DPORT(sn);
-
-			printf("%d:Connected - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
-#endif
-			setSn_IR(sn,Sn_IR_CON);
-         }
-            #endif
-	  	   return 17;
-         break;
-      case SOCK_CLOSE_WAIT :
-#ifdef TCP_S_DEBUG_
-         printf("%d:CloseWait\r\n",sn);
-#endif
-         if((ret = disconnect(sn)) != SOCK_OK) return ret;
-#ifdef TCP_S_DEBUG_
-         printf("%d:Socket Closed\r\n", sn);
-#endif
-         break;
-      case SOCK_INIT :
-#ifdef TCP_S_DEBUG_
-    	 printf("%d:Listen, TCP server loopback, port [%d]\r\n", sn, port);
-#endif
-         if( (ret = listen(sn)) != SOCK_OK) return ret;
-         break;
-      case SOCK_CLOSED:
-#ifdef TCP_S_DEBUG_
-         //printf("%d:TCP server loopback start\r\n",sn);
-#endif
-         if((ret = socket(sn, Sn_MR_TCP, port, 0x00)) != sn) return ret;
-#ifdef TCP_S_DEBUG_
-         printf("%d:Socket opened\r\n",sn);
-#endif
-         break;
-      default:
-         break;
-   }
-   return 1;
-}
-
-//TCP_S_RSV_DATA *TCP_S_Recv(uint8_t sn)
-uint8_t *TCP_S_Recv(uint8_t sn, uint16_t *rcv_size)
-{
-    #if 0
-    TCP_S_RSV_DATA *temp_data = 0;
-    temp_data->RCV_DATA = 0;
-    #endif
-    uint16_t size;
-    int ret;
-    uint8_t destip[4];
-    uint16_t destport;
-    uint8_t *buff=0;
-   if(getSn_IR(sn) & Sn_IR_CON)
-   {
-#ifdef TCP_S_DEBUG_
-        printf("Connected in function\r\n");
-#if 0
-        getSn_DIPR(sn, temp_data->DestIP);
-        temp_data->Port = getSn_DPORT(sn);
-        printf("%d:Connected - %d.%d.%d.%d : %d\r\n",sn, temp_data->DestIP[0], temp_data->DestIP[1], temp_data->DestIP[2], temp_data->DestIP[3], temp_data->Port);
-        #endif
-        getSn_DIPR(sn, destip);
-        destport = getSn_DPORT(sn);
-        printf("%d:Connected - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
-#endif
-        setSn_IR(sn,Sn_IR_CON);
-   }
-   //if((temp_data->RCV_Size = getSn_RX_RSR(sn)) > 0) // Don't need to check SOCKERR_BUSY because it doesn't not occur.
-   if((size = getSn_RX_RSR(sn)) > 0) // Don't need to check SOCKERR_BUSY because it doesn't not occur.
-   {
-       if(size > DATA_BUF_SIZE) size = DATA_BUF_SIZE;
-       printf("recv Data size : %d \r\n", size);
-       buff = (uint8_t *)calloc(size, sizeof(uint8_t));
-       if(buff == 0)
-       {
-            printf("calloc error \r\n");
-            return 0;
-       }
-       ret = recv(sn, buff, size);
-       if(ret <= 0) 
-       {
-            free(buff);
-            *rcv_size = ret;
-            return 0;      // check SOCKERR_BUSY & SOCKERR_XXX. For showing the occurrence of SOCKERR_BUSY.
-       }
-       
-    }
-   *rcv_size = size;
-   return buff;
-}
-
-
-uint16_t TCP_client(uint8_t sn, uint8_t* destip, uint16_t destport)
-{
-   int32_t ret; // return value for SOCK_ERRORs
-   uint16_t size = 0, sentsize=0;
-
-   // Destination (TCP Server) IP info (will be connected)
-   // >> loopback_tcpc() function parameter
-   // >> Ex)
-   //	uint8_t destip[4] = 	{192, 168, 0, 214};
-   //	uint16_t destport = 	5000;
-
-   // Port number for TCP client (will be increased)
-   static uint16_t any_port = 	50000;
-
-   // Socket Status Transitions
-   // Check the W5500 Socket n status register (Sn_SR, The 'Sn_SR' controlled by Sn_CR command or Packet send/recv status)
-   switch(getSn_SR(sn))
-   {
-      case SOCK_ESTABLISHED :
-#if 0
-
-         if(getSn_IR(sn) & Sn_IR_CON)	// Socket n interrupt register mask; TCP CON interrupt = connection with peer is successful
-         {
-#ifdef _LOOPBACK_DEBUG_
-			printf("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
-#endif
-			setSn_IR(sn, Sn_IR_CON);  // this interrupt should be write the bit cleared to '1'
-         }
-
-         //////////////////////////////////////////////////////////////////////////////////////////////
-         // Data Transaction Parts; Handle the [data receive and send] process
-         //////////////////////////////////////////////////////////////////////////////////////////////
-		 if((size = getSn_RX_RSR(sn)) > 0) // Sn_RX_RSR: Socket n Received Size Register, Receiving data length
-         {
-			if(size > DATA_BUF_SIZE) size = DATA_BUF_SIZE; // DATA_BUF_SIZE means user defined buffer size (array)
-			ret = recv(sn, buf, size); // Data Receive process (H/W Rx socket buffer -> User's buffer)
-
-			if(ret <= 0) return ret; // If the received data length <= 0, receive failed and process end
-			size = (uint16_t) ret;
-			sentsize = 0;
-
-			// Data sentsize control
-			while(size != sentsize)
-			{
-				ret = send(sn, buf+sentsize, size-sentsize); // Data send process (User's buffer -> Destination through H/W Tx socket buffer)
-				if(ret < 0) // Send Error occurred (sent data length < 0)
-				{
-					close(sn); // socket close
-					return ret;
-				}
-				sentsize += ret; // Don't care SOCKERR_BUSY, because it is zero.
-			}
-         }
-#endif
-         return 17;
-		 //////////////////////////////////////////////////////////////////////////////////////////////
-         break;
-
-      case SOCK_CLOSE_WAIT :
-#ifdef _LOOPBACK_DEBUG_
-         //printf("%d:CloseWait\r\n",sn);
-#endif
-         if((ret=disconnect(sn)) != SOCK_OK) return ret;
-#ifdef _LOOPBACK_DEBUG_
-         printf("%d:Socket Closed\r\n", sn);
-#endif
-         break;
-
-      case SOCK_INIT :
-#ifdef _LOOPBACK_DEBUG_
-    	 printf("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
-#endif
-    	 if( (ret = connect(sn, destip, destport)) != SOCK_OK) return ret;	//	Try to TCP connect to the TCP server (destination)
-         break;
-
-      case SOCK_CLOSED:
-    	  close(sn);
-    	  if((ret=socket(sn, Sn_MR_TCP, any_port++, 0x00)) != sn){
-         if(any_port == 0xffff) any_port = 50000;
-         return ret; // TCP socket open with 'any_port' port number
-        } 
-#ifdef _LOOPBACK_DEBUG_
-    	 //printf("%d:TCP client loopback start\r\n",sn);
-         //printf("%d:Socket opened\r\n",sn);
-#endif
-         break;
-      default:
-         break;
-   }
-   return 1;
-}
-
-int32_t udps_status(uint8_t sn, uint8_t* buf, uint16_t port)
-{
-   int32_t  ret;
-   uint16_t size, sentsize;
-   uint8_t  destip[4];
-   uint16_t destport;
-
-   switch(getSn_SR(sn))
-   {
-      case SOCK_UDP :
-         if((size = getSn_RX_RSR(sn)) > 0)
-         {
-            if(size > DATA_BUF_SIZE) size = DATA_BUF_SIZE;
-            ret = recvfrom(sn, buf, size, destip, (uint16_t*)&destport);
-            if(ret <= 0)
-            {
-#ifdef _LOOPBACK_DEBUG_
-               printf("%d: recvfrom error. %ld\r\n",sn,ret);
-#endif
-               return ret;
-            }
-            size = (uint16_t) ret;
-            sentsize = 0;
-            while(sentsize != size)
-            {
-               ret = sendto(sn, buf+sentsize, size-sentsize, destip, destport);
-               if(ret < 0)
-               {
-#ifdef _LOOPBACK_DEBUG_
-                  printf("%d: sendto error. %ld\r\n",sn,ret);
-#endif
-                  return ret;
-               }
-               sentsize += ret; // Don't care SOCKERR_BUSY, because it is zero.
-            }
-         }
-         return SOCK_UDP;
-         break;
-      case SOCK_CLOSED:
-#ifdef _LOOPBACK_DEBUG_
-         //printf("%d:UDP loopback start\r\n",sn);
-#endif
-         if((ret = socket(sn, Sn_MR_UDP, port, 0x00)) != sn)
-            return ret;
-#ifdef _LOOPBACK_DEBUG_
-         printf("%d:Opened, UDP loopback, port [%d]\r\n", sn, port);
-#endif
-         break;
-      default :
-         break;
-   }
-   return 1;
-}
 static StatusCode RtpGetRandomCb(uint32_t *random)
 {
     *random = (uint32_t)(rand());//-0x80000000;
@@ -819,7 +551,7 @@ void TxRtpSetup()
 
     config.payloadType = 8;//0;//11;  //8 = G.711 PCMA  11 = L16
     config.getRandomCb = RtpGetRandomCb;
-    config.periodicTimestampIncr = 8000 / 1000 * 12.4;//16000 / 1000 * 6.6;//20;
+    config.periodicTimestampIncr = 8000 / 1000 * 12.5;//16000 / 1000 * 6.6;//20;
 
     if(STATUS_OK != rtpInit(&config))
     {

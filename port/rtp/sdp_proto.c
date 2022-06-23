@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "sdp_proto.h"
+
 uint8_t *SDP_packet_make(SDP_Data *data)
 {
     uint16_t current_size = 0, temp_size =0, body_size = 0;
@@ -23,14 +24,17 @@ uint8_t *SDP_packet_make(SDP_Data *data)
         return 0;
     }
     //body make
-    temp_size =sprintf((char *)body_data, "V=%d\r\n", data->message_body.version);
+    temp_size =sprintf((char *)body_data, "v=%d\r\n", data->message_body.version);
     //printf("vesion : %d\r\n",temp_size);
     body_size += temp_size;
-    temp_size =sprintf((char *)body_data + body_size, "o=SIPPS %ld %ld IN IP4 %d.%d.%d.%d\r\n", data->message_body.session_ID, data->message_body.session_version, data->address[0],data->address[1],data->address[2],data->address[3]);
+    //temp_size =sprintf((char *)body_data + body_size, "o=SIPPS %ld %ld IN IP4 %d.%d.%d.%d\r\n", data->message_body.session_ID, data->message_body.session_version, data->address[0],data->address[1],data->address[2],data->address[3]);
+    temp_size =sprintf((char *)body_data + body_size, "o=%s %ld %ld IN IP4 %d.%d.%d.%d\r\n",data->message_body.owner_username, data->message_body.session_ID, data->message_body.session_version, data->address[0],data->address[1],data->address[2],data->address[3]);
     //printf("owner/creator : %d\r\n",temp_size);
     body_size += temp_size;
-    temp_size =sprintf((char *)body_data + body_size, "s=SIP call\r\nc=IN IP4 %d.%d.%d.%d\r\n", data->address[0],data->address[1],data->address[2],data->address[3]);
-    //printf("session Name & connection Info : %d\r\n",temp_size);
+    temp_size =sprintf((char *)body_data + body_size, "s=%s\r\nc=IN IP4 %d.%d.%d.%d\r\n",data->message_body.session_name, data->address[0],data->address[1],data->address[2],data->address[3]);
+    //printf("session Name & connection Info : %d\r\n",temp_size); the session test protocol of wiznet 
+    body_size += temp_size;
+    temp_size =sprintf((char *)body_data + body_size, "i=%s\r\n", data->message_body.session_information); 
     body_size += temp_size;
     temp_size =sprintf((char *)body_data + body_size, "t=%d %d\r\n", data->message_body.start_time, data->message_body.stop_time);
     //printf("start stop time : %d\r\n",temp_size);
@@ -40,6 +44,10 @@ uint8_t *SDP_packet_make(SDP_Data *data)
     body_size += temp_size;
     temp_size =sprintf((char *)body_data + body_size, "a=%s:%d %s/%d\r\n", data->message_body.media_attr_fieldname, data->message_body.media_format, data->message_body.media_attr_mime_type, data->message_body.media_attr_sample_rate);
     //printf("meida Description : %d\r\n",temp_size);
+    body_size += temp_size;
+    temp_size =sprintf((char *)body_data + body_size, "a=fmtp:%d %d IN IP4 %d.%d.%d.%d/127\r\n",data->message_body.fmtp_type, data->message_body.media_port, data->address[0],data->address[1],data->address[2],data->address[3]);
+    //body_size += temp_size;
+    ///temp_size =sprintf((char *)body_data + body_size, "a=sendrecv\r\n");
     body_size += temp_size;
     //printf("message body[ %d ]: %s[end] \r\n",body_size, body_data);
     data->content_length = body_size;
@@ -68,10 +76,10 @@ uint8_t *SDP_packet_make(SDP_Data *data)
     temp_size =sprintf((char *)(packet_data + current_size), "Content-Length: %d\r\n", data->content_length);
     //printf("Content-length : %d\r\n",temp_size);
     current_size += temp_size;
-    temp_size =sprintf((char *)(packet_data + current_size), "Date: Mon 07 june 2022 16:56:05  GMT con\r\n");
+    temp_size =sprintf((char *)(packet_data + current_size), "Date: Wed 22 june 2022 16:37:05  GMT\r\n");
     //printf("Date : %d\r\n",temp_size);
     current_size += temp_size;
-    temp_size =sprintf((char *)(packet_data + current_size), "Contact: <sip:%08lx@%d.%d.%d.%d\r\n", data->from_data.user_part, data->address[0], data->address[1], data->address[2], data->address[3]);
+    temp_size =sprintf((char *)(packet_data + current_size), "Contact: <sip:%08lx@%d.%d.%d.%d>\r\n", data->from_data.user_part, data->address[0], data->address[1], data->address[2], data->address[3]);
     //printf("Contact : %d\r\n",temp_size);
     current_size += temp_size;
     temp_size =sprintf((char *)(packet_data + current_size), "Expires: %d\r\nAccept: %s", data->expires, data->content_type);

@@ -18,6 +18,7 @@ typedef struct SDP_message_body_t
     uint32_t session_ID;
     uint32_t session_version;
     uint8_t *session_name;
+    uint8_t *session_information;
     uint8_t *network_type;
     uint8_t *address_type;
     //uint8_t address[4];
@@ -30,6 +31,7 @@ typedef struct SDP_message_body_t
     uint8_t *media_attr_fieldname;
     uint8_t *media_attr_mime_type;
     uint16_t media_attr_sample_rate;
+    uint8_t fmtp_type;
 }SDP_message_body;
 
 typedef struct SDP_Data_t
