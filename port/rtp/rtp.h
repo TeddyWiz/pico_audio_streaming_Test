@@ -79,5 +79,6 @@ uint32_t get_ssrc(void);
 StatusCode rtpShutdown(void);
 StatusCode rtpAddHeader(uint8_t *data,
                        uint32_t length);
+void get_time_stamp(uint64_t time_delay);
 
 #endif /* Header Guard */

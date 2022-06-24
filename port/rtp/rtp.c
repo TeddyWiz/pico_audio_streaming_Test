@@ -148,3 +148,7 @@ StatusCode rtpAddHeader(uint8_t *data,
     return STATUS_OK;
 }
 
+void get_time_stamp(uint64_t time_delay)
+{
+    rtpDataStore.config.periodicTimestampIncr = (8000  * 8 ) * time_delay / 1000000;
+}

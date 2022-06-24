@@ -39,6 +39,10 @@
 
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#include "pico/util/datetime.h"
+#include "hardware/rtc.h"
+
+
 
 #include "rtp.h"
 #include "sdp_proto.h"
@@ -180,54 +184,7 @@ int main()
     uint16_t random_data = 0;
     uint64_t pre_time_stamp = 0;
     uint64_t now_time_stamp = 0;
-    //rtp data
-    int8_t *rtp_data = 0;
-    int8_t *rtp_data_current = 0;
-
-    uint8_t sample_packet[160] =  \
-    {0x6e, 0x68, 0x15, 0x14, 0x6a, 0x14, 0x14, 0x15, 0x69, 0x60,\
-     0x6e, 0x6a, 0x6c, 0x6e, 0x64, 0x6c, 0x6a, 0x16, 0x17, 0x6c, 0x6e, 0x6d, 0x60, 0x66, 0x7e, 0x7f,\
-     0x45, 0xc6, 0xc9, 0xf0, 0xfc, 0xe7, 0xf3, 0xfa, 0xe5, 0xf0, 0xcb, 0xf1, 0xf6, 0xcf, 0xcd, 0xe4,\
-     0xfa, 0xc2, 0x53, 0x74, 0x5f, 0x42, 0x5b, 0xf6, 0xf0, 0xf2, 0xfc, 0xe0, 0xee, 0x97, 0xe8, 0xf2,\
-     0x57, 0x5a, 0x4f, 0x4d, 0x75, 0x67, 0x7f, 0x7d, 0x66, 0x65, 0x74, 0x75, 0x43, 0x78, 0x4b, 0x47,\
-     0x55, 0x43, 0x67, 0x66, 0x6d, 0x63, 0x6c, 0x64, 0x66, 0x64, 0x78, 0x64, 0x6f, 0x6f, 0x14, 0x14,\
-     0x6c, 0x17, 0x11, 0x13, 0x10, 0x17, 0x10, 0x1c, 0x1f, 0x1d, 0x10, 0x10, 0x16, 0x10, 0x10, 0x1f,\
-     0x1c, 0x1f, 0x19, 0x1e, 0x18, 0x10, 0x17, 0x12, 0x14, 0x6c, 0x62, 0x6d, 0x63, 0x6a, 0x15, 0x15,\
-     0x17, 0x6e, 0x65, 0x77, 0x72, 0x40, 0xd0, 0xf7, 0x73, 0x7d, 0x7e, 0x62, 0x67, 0x62, 0x6a, 0x15,\
-     0x6a, 0x17, 0x15, 0x65, 0x43, 0x71, 0x5a, 0x59, 0x7e, 0x60, 0x66, 0x7a, 0x72, 0x72, 0x49, 0x65,\
-     0x7a, 0x60, 0x78, 0x5d, 0x44, 0x42};
-
-     uint8_t Temp_invite[1056] = \
-        "INVITE sip:3796CB71@sip.cybercity.dk SIP/2.0\n"\
-        "Via: SIP/2.0/UDP 192.168.15.125;branch=z9hG4bKnp10144774-4725f980192.168.15.125;rport\n"\
-        "From: \"arik\" <sip:35104723@sip.cybercity.dk>;tag=b56e6e\n"\
-        "To: <sip:3796CB71@sip.cybercity.dk>\n"\
-        "Call-ID: 11894297-4432a9f8@192.168.15.125\n"\
-        "CSeq: 2 INVITE\n"\
-        "Proxy-Authorization: Digest username=\"voi18062\",realm=\"sip.cybercity.dk\",uri=\"sip:192.168.15.125\",nonce=\"1701ba6557c1e1b4223e887e293cfa8\",opaque=\"1701a1351f70795\",nc=\"00000001\",response=\"83e1608f6d9ad38597ac6bbe4d3aafae\"\n"\
-        "Content-Type: application/sdp\n"\
-        "Content-Length: 272\n"\
-        "Date: Mon, 04 Jul 2005 09:56:06 GMT\n"\
-        "Contact: <sip:35104723@192.168.15.125>\n"\
-        "Expires: 120\n"\
-        "Accept: application/sdp\n"\
-        "Max-Forwards: 70\n"\
-        "User-Agent: Nero SIPPS IP Phone Version 2.0.51.16\n"\
-        "Allow: INVITE, ACK, CANCEL, BYE, REFER, OPTIONS, NOTIFY, INFO\n\n"\
-        "v=0\n"\
-        "o=SIPPS 11888330 11888327 IN IP4 192.168.15.125\n"\
-        "s=SIP call\n"\
-        "c=IN IP4 192.168.15.125\n"\
-        "t=0 0\n"\
-        "m=audio 30002 RTP/AVP 0 8 97 2 3\n"\
-        "a=rtpmap:0 L16/41100\n"\
-        "a=rtpmap:8 pcma/8000\n"\
-        "a=rtpmap:97 iLBC/8000\n"\
-        "a=rtpmap:2 G726-32/8000\n"\
-        "a=rtpmap:3 GSM/8000\n"\
-        "a=fmtp:97 mode=20\n"\
-        "a=sendrecv\n";
-        
+    ;
     uint8_t *packet_data;
     SDP_Data session_data;
     session_data.from_data.display_info = "wiznet";
@@ -273,7 +230,15 @@ int main()
     session_data.message_body.media_attr_sample_rate = 8000;//16000;
     session_data.message_body.fmtp_type = 78;
     
-    
+    datetime_t t = {
+            .year  = 2022,
+            .month = 05,
+            .day   = 24,
+            .dotw  = 5, // 0 is Sunday, so 5 is Friday
+            .hour  = 11,
+            .min   = 40,
+            .sec   = 00
+    };
     
     memset(&adc_data, 0, sizeof(ADC_DATA_STATUS));
     adc_data.sendComplete = 1;
@@ -296,14 +261,6 @@ int main()
     bi_decl(bi_1pin_with_name(ADC_PIN, "ADC input pin"));
     sleep_ms(1000);
     printf("Starting Program\n");
-    printf("random1 = %x\r\n ", random_data);
-    random_data = rand() >> 16;
-    printf("random2 = %x\r\n ", random_data);
-    //random_data = (rand() >> 16) >> 16;
-    printf("random3 = %08X\r\n ", (uint32_t)((rand())));
-    //struct repeating_timer timer;
-    //add_repeating_timer_ms(500, temp_repeating_timer_callback, NULL, &timer);
-#if 1
     adc_init();
     adc_gpio_init( ADC_PIN);
     adc_select_input( ADC_NUM);
@@ -323,20 +280,12 @@ int main()
     printf("Starting capture\n");
     adc_run(true);
 
+    // Start the RTC
+    rtc_init();
+    rtc_set_datetime(&t);
 
     //rtp setup
-    TxRtpSetup();
-    printf("send RTP port %d \r\n", UDP_SPORT);
-    //packet_data = SDP_packet_make(&session_data);
-    //printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
-    rtp_data = (uint8_t *)calloc(512, sizeof(uint8_t));
-    if(rtp_data == 0)
-    {
-        printf("craet buff error \r\n");
-        return 0;
-        //continue;
-    }
-    #endif
+    printf("send RTP IP %d.%d.%d.%d port %d \r\n",UDP_BroadIP[0],UDP_BroadIP[1],UDP_BroadIP[2],UDP_BroadIP[3],UDP_SPORT);
 #ifdef _DHCP
     // this example uses DHCP
     networkip_setting = wizchip_network_initialize(true, &g_net_info);
@@ -376,6 +325,8 @@ int main()
         printf(" Check your network setting.\n");
 
     //adc test
+    SDP_init(&session_data, UDP_SOCKET, UDP_BroadIP, UDP_SPORT);
+    adc_func_set(adc_fifo_get_blocking);
     /* Infinite loop */
     for (;;)
     {
@@ -391,71 +342,23 @@ int main()
         #if 1
         if(data_send_status == 1)
         {
-            
-            #if 1   // rtp test
-           
-            rtp_data_current = rtp_data + 12;
-            for(i= 0; i<ADC_SAMPLE_COUNT; i++)
-            {
-                adc_raw = adc_fifo_get_blocking();
-                #if 0   //file make
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
-                *rtp_data_current++ = adc_raw1 & 0x00ff;
-                *rtp_data_current++ = (adc_raw1 >> 8) & 0x00ff;
-                #endif
-                #if 0  //L16
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
-                *rtp_data_current++ = (adc_raw1 >> 8) & 0x00ff;
-                *rtp_data_current++ = adc_raw1 & 0x00ff;
-                #endif
-                #if 1  //PCMA G711
-                adc_raw1 = (adc_raw&0x0fff) - (1<<10);
-                *rtp_data_current++ = ALaw_Encode(adc_raw1);
-                #endif
-            }
-            if (STATUS_OK != rtpAddHeader(rtp_data,12))
-            {
-                printf("Rtp Add Header failed");
-            }
-            UDP_ret=sendto(UDP_SOCKET, rtp_data, ADC_SAMPLE_COUNT + 12, UDP_BroadIP, UDP_SPORT);
+            UDP_ret=RTP_Data_Send();
             now_time_stamp = time_us_64();
-            printf("data send : %d[%lld][%lld]\r\n",UDP_ret, pre_time_stamp, now_time_stamp - pre_time_stamp);
+            printf("data send : %d[%lld]\r\n",UDP_ret, now_time_stamp - pre_time_stamp);
+            get_time_stamp(now_time_stamp - pre_time_stamp);
             pre_time_stamp = now_time_stamp;
-            send_count++;
-            #endif
-            #if 1           //limit streaming
-            if(send_count >= DATACNT)  
-            {
-                //UDP_ret = sendto(UDP_SOCKET, "STOP", 5, UDP_BroadIP, udp_send_port);
-                printf("send finish %d\r\n", send_count);
-                data_send_status = 0;
-                send_count = 0;
-                adc_run(false);
-                session_data.method = "BYE";
-                packet_data = SDP_packet_make(&session_data);
-                printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
-                //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1056, UDP_BroadIP, UDP_SPORT); //1049
-                UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
-                free(packet_data);
-                printf("send bye packet %d\r\n", UDP_ret);
-            }
-            #endif
         }
         #endif
-        //TCP_C_status =TCP_client(TCP_C_SOCKET, TCP_Client_DestIp, TCP_Client_Port);
         UDP_S_status = udps_status(UDP_SOCKET, UDP_buff, UDP_PORT);
         TCP_S_status = TCP_Server(TCP_S_SOCKET, TCP_S_PORT);
         if(TCP_S_status == 17)
         {
-            //TCP_Server_Buf = TCP_S_Recv(TCP_S_SOCKET);
-            //tcp_rcv_data = TCP_S_Recv(TCP_S_SOCKET);
             tcp_rcv_data = TCP_S_Recv(TCP_S_SOCKET, &tcp_rcv_size);
             if(tcp_rcv_data != 0)
             {
                 printf("rcv[%d] : %s \r\n",tcp_rcv_size, tcp_rcv_data);
                 if(UDP_S_status == 0x22)
                 {
-                    //UDP_ret = sendto(UDP_SOCKET, tcp_rcv_data, tcp_rcv_size, UDP_BroadIP, UDP_SPORT);
                     if(UDP_ret < 0)
                     {
                         printf("sendto Error \r\n");
@@ -463,35 +366,15 @@ int main()
                 }
                 if(strncmp(tcp_rcv_data, "start", 5) == 0)
                 {
-                    printf(" data  send start\r\n");
-                    //UDP_ret = sendto(UDP_SOCKET, "START", 5, UDP_BroadIP, UDP_SPORT);
-                    /*
-                    if(tcp_rcv_size > 6)
-                    {
-                        udp_send_port = atoi(tcp_rcv_data + 6);
-                    }
-                    else
-                        printf("short msg not port number\r\n");
-                    if(udp_send_port <= 0)
-                    {
-                        udp_send_port = UDP_SPORT;
-                        printf("change Default Port : %d\r\n", UDP_SPORT);
-                    }
-                    session_data.message_body.media_port = udp_send_port;
-                    */
+                    printf("data send start\r\n");
                     printf("recv port = %d \r\n", UDP_SPORT);
                     send(TCP_S_SOCKET, "START RTP Streaming\r\n", strlen("START RTP Streaming\r\n"));
                     adc_run(true);
                     adc_fifo_drain();
                     data_send_status = 1;
-                    session_data.method = "INVITE";
-                    session_data.to_data.user_part++;
-                    packet_data = SDP_packet_make(&session_data);
-                    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
-                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1056, UDP_BroadIP, UDP_SPORT);
-                    UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
-                    free(packet_data);
-                    printf("send invice packet %d\r\n", UDP_ret);
+                    rtc_get_datetime(&t);
+                    get_date_data(&t);
+                    SDP_INVITE_Send();
                     adc_data.sendStatus = 1;
                 }
                 else if(strncmp(tcp_rcv_data, "stop", 4) == 0)
@@ -501,20 +384,14 @@ int main()
                     //adc_data.sendStatus = 0;
                     adc_run(false);
                     send(TCP_S_SOCKET, "STOP RTP Streaming\r\n", strlen("STOP RTP Streaming\r\n"));
-                    session_data.method = "BYE";
-                    packet_data = SDP_packet_make(&session_data);
-                    printf("packet data[%ld]:[%s]\r\n", strlen(packet_data), packet_data);
-                    //UDP_ret = sendto(UDP_SOCKET, Temp_invite, 1049, UDP_BroadIP, UDP_SPORT);
-                    UDP_ret = sendto(UDP_SOCKET, packet_data, strlen(packet_data), UDP_BroadIP, UDP_SPORT);
-                    free(packet_data);
-                    printf("send bye packet %d\r\n", UDP_ret);
+                    rtc_get_datetime(&t);
+                    get_date_data(&t);
+                    SDP_BYE_Send();
                 }
                 free(tcp_rcv_data);
             }
         }
     }
-    free(rtp_data);
-    //free(packet_data);
 }
 
 /**
@@ -535,28 +412,6 @@ static void repeating_timer_callback(void)
         wizchip_dhcp_time_handler();
     }
 #endif
-}
-
-static StatusCode RtpGetRandomCb(uint32_t *random)
-{
-    *random = (uint32_t)(rand());//-0x80000000;
-
-    return STATUS_OK;
-}
-void TxRtpSetup()
-{
-    rtpConfig config;
-
-    memset(&config, 0, sizeof(config));
-
-    config.payloadType = 8;//0;//11;  //8 = G.711 PCMA  11 = L16
-    config.getRandomCb = RtpGetRandomCb;
-    config.periodicTimestampIncr = 8000 / 1000 * 12.5;//16000 / 1000 * 6.6;//20;
-
-    if(STATUS_OK != rtpInit(&config))
-    {
-        printf("RTP Init Failed",0);
-    }
 }
 
 

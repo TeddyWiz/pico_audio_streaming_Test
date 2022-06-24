@@ -2,6 +2,9 @@
 #ifndef _SDP_PROTO_H
 #define _SDP_PROTO_H
 
+#include "pico/util/datetime.h"
+
+typedef uint16_t (*adc_input_func)(void);
 
 typedef struct Header_address_Part_t
 {
@@ -55,7 +58,15 @@ typedef struct SDP_Data_t
     SDP_message_body message_body;
 }SDP_Data;
 
+void adc_func_set(adc_input_func func);
+uint8_t RTP_Data_Send(void);
+//void get_now_SDP_time(uint64_t now_time);
+void get_date_data(datetime_t *indate);
+void SDP_init(SDP_Data *SDP_data,uint8_t sn, uint8_t *addr, uint16_t port);
+
 uint8_t *SDP_packet_make(SDP_Data *data);
+uint8_t SDP_INVITE_Send(void);
+uint8_t SDP_BYE_Send(void);
 
 #endif
 
